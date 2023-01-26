@@ -1,3 +1,4 @@
+#include <atomic>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -6,6 +7,7 @@
 template <typename Resource>
 class ResourcePool {
  private:
+
   /**
    * @brief Constuct the resource pool.
    * @param min_count The minimum of number of resources in the pool.
@@ -22,8 +24,13 @@ class ResourcePool {
         deleter_(deleter) {
     alloc_res();
   }
+  ResourcePool(const ResourcePool &) = delete;
+  ResourcePool(ResourcePool &&) = delete;
+  ResourcePool &operator=(const ResourcePool &) = delete;
+  ResourcePool &operator=(ResourcePool &&) = delete;
 
  public:
+
   /**
    * @brief A factory method to get the instance of ResourcePool. The instance
    * is designed in singleton pattern, so the arguments are only valid on the
@@ -113,7 +120,7 @@ class ResourcePool {
   /**
    * @brief The number of resources that have been used.
    */
-  std::atomic<size_t> total_count_ = {0};
+  std::atomic<size_t> total_count_{0};
 
   /**
    * @brief The maximum number of resources that can be allocated.
@@ -130,7 +137,8 @@ class ResourcePool {
 template <typename Resource>
 void ResourcePool<Resource>::alloc_res() {
   std::lock_guard lock(res_mutex_);
-  for (size_t i = 0, n = min(min_count_, max_count_ - size_t(total_count_));
+  for (size_t i = 0,
+              n = std::min(min_count_, max_count_ - size_t(total_count_));
        i < n; ++i) {
     ++total_count_;
     res_.push(alloc_());

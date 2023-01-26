@@ -19,7 +19,9 @@ void ThreadPool::create_threads() {
 void ThreadPool::wait_for_tasks() {
   waiting_ = true;
   std::unique_lock<std::mutex> tasks_lock(tasks_mutex_);
-  task_done_cv_.wait(tasks_lock, [this] { return tasks_total_ == 0; });
+  task_done_cv_.wait(tasks_lock, [this] {
+    return (tasks_total_ == (paused_ ? tasks_.size() : 0));
+  });
   waiting_ = false;
 }
 
