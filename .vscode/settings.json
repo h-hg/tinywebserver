@@ -1,0 +1,10 @@
+{
+  "C_Cpp.default.cppStandard": "c++23",
+  "editor.formatOnSave": true,
+  "editor.insertSpaces": true,
+  "editor.renderControlCharacters": true,
+  "editor.renderWhitespace": "all",
+  "editor.tabSize": 2,
+  "files.encoding": "utf8",
+  "files.eol": "\n",
+}
