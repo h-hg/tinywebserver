@@ -7,7 +7,6 @@
 template <typename Resource>
 class ResourcePool {
  private:
-
   /**
    * @brief Constuct the resource pool.
    * @param min_count The minimum of number of resources in the pool.
@@ -30,7 +29,6 @@ class ResourcePool {
   ResourcePool &operator=(ResourcePool &&) = delete;
 
  public:
-
   /**
    * @brief A factory method to get the instance of ResourcePool. The instance
    * is designed in singleton pattern, so the arguments are only valid on the
@@ -159,12 +157,8 @@ std::shared_ptr<ResourcePool<Resource>> ResourcePool<Resource>::get_instance(
     size_t min_count, size_t max_count,
     const std::function<Resource *()> &alloc,
     const std::function<void(Resource *)> &deleter) {
-  static std::once_flag flag;
-  static std::shared_ptr<ResourcePool<Resource>> ptr = nullptr;
-  std::call_once(flag, [&]() {
-    ptr = std::make_shared<ResourcePool<Resource>>(min_count, max_count, alloc,
-                                                   deleter);
-  });
+  static auto ptr = std::make_shared<ResourcePool<Resource>>(
+      min_count, max_count, alloc, deleter);
   return ptr;
 }
 
