@@ -27,12 +27,12 @@ class Logger {
 
  public:
   enum class Level {
-    INFO,
-    WRAN,
-    ERROR,
-    DEBUG,
-    FATAL,
-    TRACE,
+    TRACE = 0,
+    DEBUG = 1,
+    INFO = 2,
+    WRAN = 3,
+    ERROR = 4,
+    FATAL = 5,
   };
 
   class Formatter {
@@ -53,6 +53,11 @@ class Logger {
            std::unique_ptr<Formatter> formatter);
 
   /**
+   * @brief Set the log level
+   */
+  void set_level(Level level) { level_ = level; }
+
+  /**
    * @brief Start the writer thread.
    * @return Return false if the writer thread has been started.
    */
@@ -60,7 +65,7 @@ class Logger {
 
   /**
    * @brief Get the instance of the Logger
-  */
+   */
   static std::shared_ptr<Logger> get_instance() {
     static std::shared_ptr<Logger> ptr(new Logger());
     return ptr;
@@ -136,10 +141,9 @@ class Logger {
   /**
    * @brief Add log.
    */
-  bool log(
-      Level level, const std::string &content,
-      std::thread::id id = std::this_thread::get_id(),
-      const std::source_location location = std::source_location::current);
+  bool log(Level level, const std::string &content,
+           std::thread::id id = std::this_thread::get_id(),
+           const std::source_location location = std::source_location::current);
 
   /**
    * @return Return false if the writer hasn't been set.
@@ -148,7 +152,7 @@ class Logger {
   bool flush();
 
  protected:
-
+  Level level_ = Level::TRACE;
   /**
    * @brief Write all logs without lock
    */

@@ -33,7 +33,8 @@ bool Logger::log(
     Level level, const std::string &content,
     std::thread::id id = std::this_thread::get_id(),
     const std::source_location location = std::source_location::current()) {
-  if (writer_ == nullptr || formatter_ == nullptr) return false;
+  if (writer_ == nullptr || formatter_ == nullptr || level < level_)
+    return false;
   auto time = std::chrono::system_clock::now();
   auto msg = formatter_->operator()(level, content, id, location, time);
   // insert the log
