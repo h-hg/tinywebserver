@@ -23,4 +23,18 @@ inline std::string_view rtrim(std::string_view str) {
 
 inline std::string_view trim(std::string_view str) { return rtrim(ltrim(str)); }
 
+inline std::string_view &getline(std::string_view &input, std::string_view &str,
+                                 char delim) {
+  auto pos = input.find_first_of(delim);
+  str = input.substr(0, pos);
+  return input = input.substr(pos + 1);
+}
+
+inline std::string_view &getline(std::string_view &input, std::string_view &str,
+                                 std::string_view delim) {
+  auto pos = input.find_first_of(delim);
+  str = input.substr(0, pos);
+  return input = input.substr(pos + delim.size());
+}
+
 #endif

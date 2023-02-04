@@ -50,9 +50,8 @@ class Epoller {
   /**
    * @brief Epoll wait
    */
-  int wait(int timewait = -1) {
-    return epoll_wait(epfd_, &events_[0], static_cast<int>(events_.size()),
-                      timewait);
+  int wait(int timeout = -1) {
+    return epoll_wait(epfd_, &events_[0], n_fd_, timeout);
   }
 
   /**
