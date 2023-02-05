@@ -320,6 +320,7 @@ class BufferVector {
    */
   void forward_write() {
     ++write_index_;
+    if (write_index_ == data_.size()) add_segment(1);
     n_write_ = 0;
   }
 

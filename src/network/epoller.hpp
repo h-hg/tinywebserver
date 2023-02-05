@@ -21,9 +21,11 @@ class Epoller {
   /**
    * @brief Add fd to the epoll tree
    */
-  bool add(int fd, epoll_event event) {
+  bool add(int fd, epoll_event event, int* p_errno = nullptr) {
     if (fd < 0) return false;
-    if (epoll_ctl(epfd_, EPOLL_CTL_ADD, fd, &event) != 0) return false;
+    auto res = epoll_ctl(epfd_, EPOLL_CTL_ADD, fd, &event);
+    if (p_errno != nullptr) *p_errno = errno;
+    if (res != 0) return false;
     if (++n_fd_ > events_.size()) events_.resize(n_fd_);
     return true;
   }
@@ -31,18 +33,22 @@ class Epoller {
   /**
    * @brief Modify listening event on the epoll tree
    */
-  bool mod(int fd, epoll_event event) {
+  bool mod(int fd, epoll_event event, int* p_errno = nullptr) {
     if (fd < 0) return false;
-    return 0 == epoll_ctl(epfd_, EPOLL_CTL_MOD, fd, &event);
+    auto res = epoll_ctl(epfd_, EPOLL_CTL_MOD, fd, &event);
+    if (p_errno != nullptr) *p_errno = errno;
+    return res == 0;
   }
 
   /**
    * @brief Remove the fd from the epoll tree
    */
-  bool del(int fd) {
+  bool del(int fd, int* p_errno = nullptr) {
     if (fd < 0) return false;
     epoll_event ev = {0};
-    if (epoll_ctl(epfd_, EPOLL_CTL_DEL, fd, &ev) != 0) return false;
+    auto res = epoll_ctl(epfd_, EPOLL_CTL_DEL, fd, &ev);
+    if (p_errno != nullptr) *p_errno = errno;
+    if (res != 0) return false;
     if (--n_fd_ > events_.size() * 2) events_.resize(n_fd_);
     return true;
   }
@@ -50,8 +56,10 @@ class Epoller {
   /**
    * @brief Epoll wait
    */
-  int wait(int timeout = -1) {
-    return epoll_wait(epfd_, &events_[0], n_fd_, timeout);
+  int wait(int timeout = -1, int* p_errno = nullptr) {
+    auto res = epoll_wait(epfd_, &events_[0], n_fd_, timeout);
+    if (p_errno != nullptr) *p_errno = errno;
+    return res;
   }
 
   /**
