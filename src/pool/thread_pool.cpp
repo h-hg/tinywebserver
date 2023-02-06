@@ -18,7 +18,7 @@ void ThreadPool::create_threads() {
 
 void ThreadPool::wait_for_tasks() {
   waiting_ = true;
-  std::unique_lock<std::mutex> tasks_lock(tasks_mutex_);
+  std::unique_lock tasks_lock(tasks_mutex_);
   task_done_cv_.wait(tasks_lock, [this] {
     return (tasks_total_ == (paused_ ? tasks_.size() : 0));
   });
@@ -33,20 +33,21 @@ void ThreadPool::destroy_threads() {
 }
 
 void ThreadPool::reset(unsigned int thread_count) {
-  // 保存这个状态有什么用
+  // saving the state
   const bool was_paused = paused_;
   paused_ = true;
   wait_for_tasks();
   destroy_threads();
   thread_count_ = determine_thread_count(thread_count);
   threads_ = std::make_unique<std::thread[]>(thread_count);
+  // restore the state
   paused_ = was_paused;
   create_threads();
 }
 
 void ThreadPool::worker() {
   while (running_) {
-    std::unique_lock<std::mutex> tasks_lock(tasks_mutex_);
+    std::unique_lock tasks_lock(tasks_mutex_);
     task_avail_cv_.wait(tasks_lock,
                         [this] { return !tasks_.empty() || !running_; });
     if (running_ && !paused_) {

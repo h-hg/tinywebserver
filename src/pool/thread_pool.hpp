@@ -36,9 +36,6 @@ class ThreadPool {
    */
   ~ThreadPool() {
     wait_for_tasks();
-    // 不太懂这里为什么还有个 destroy，wait_for_tasks 看 worker
-    // 的代码可以保证所有 tasks_total = 0 解答：destroy_threads 可以保证 running
-    // = false，继而使用 join，可以保证所有 thread 都可以正常退出
     destroy_threads();
   }
 

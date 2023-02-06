@@ -5,6 +5,7 @@
 #include <chrono>
 #include <condition_variable>
 // #include <format> // format haven't been support
+#include <cassert>
 #include <fstream>
 #include <functional>
 #include <list>
@@ -18,6 +19,10 @@
 #include <vector>
 
 class Logger {
+ protected:
+  using WriterPtr =
+      std::unique_ptr<std::fstream, std::function<void(std::fstream *)>>;
+
  private:
   Logger() = default;
   Logger(const Logger &) = delete;
@@ -44,12 +49,12 @@ class Logger {
   };
 
   /**
-   * @brief Set some essiential parameters
+   * @brief Set some essiential parameters.
    * @param buf_cell_size The number of logs written by the writer thread at one
    * time.
    * @note This method will block the writer thread.
    */
-  void set(size_t buf_cell_size, std::unique_ptr<std::fstream> writer,
+  bool set(std::unique_ptr<std::fstream> writer, size_t buf_cell_size,
            std::unique_ptr<Formatter> formatter);
 
   /**
@@ -59,25 +64,29 @@ class Logger {
 
   /**
    * @brief Start the writer thread.
-   * @return Return false if the writer thread has been started.
+   * @return Return false if one of the conditions is met. 1. The writer thread
+   * has been started. 2. Writer or Formatter is not set.
    */
   bool start();
 
   /**
+   * @brief Stop the writer thread.
+   * @return Return false if the writer thread has not been started.
+   */
+  bool stop();
+
+  /**
    * @brief Get the instance of the Logger
    */
-  static std::shared_ptr<Logger> get_instance() {
-    static std::shared_ptr<Logger> ptr(new Logger());
-    return ptr;
+  static Logger &get_instance() {
+    static Logger instance;
+    return instance;
   }
 
   /**
    * @brief Destroy the Logger
    */
-  ~Logger() {
-    destroy_writer_thread();
-    flush();
-  };
+  ~Logger();
 
   /**
    * @brief Log in info level.
@@ -146,24 +155,13 @@ class Logger {
            const std::source_location location = std::source_location::current);
 
   /**
-   * @return Return false if the writer hasn't been set.
-   * @note flush is independent to writer thread.
+   * @brief Flush logs.
+   * @return Return false if the writer or formatter hasn't been set.
    */
   bool flush();
 
  protected:
   Level level_ = Level::TRACE;
-  /**
-   * @brief Write all logs without lock
-   */
-  void writer_logs(std::list<std::string> &logs) {
-    for (auto &log : logs) (*writer_) << log;
-  }
-
-  /**
-   * @brief destroy writer thread
-   */
-  void destroy_writer_thread();
 
   void writer_worker();
 
@@ -190,24 +188,37 @@ class Logger {
   /**
    * @brief writer
    */
-  std::unique_ptr<std::fstream, std::function<void(std::fstream *)>> writer_ =
-      nullptr;
+  WriterPtr writer_ = nullptr;
 
+  /**
+   * @brief Mutex for writer_ and formatter_
+   */
+  std::mutex write_mutex_;
   /**
    * @brief writer thread
    */
-  std::unique_ptr<std::thread> writer_thread_ = nullptr;
+  std::thread writer_thread_;
 
   /**
    * @brief The number of logs written by the writer thread at one time.
    */
-  size_t buf_cell_size_ = 10;
+  std::atomic<size_t> buf_cell_size_ = 10;
 
   /**
    * @brief An atomic variable indicating to the writer to keep running. When
    * set to false, the workers permanently stop working.
    */
   std::atomic<bool> running_ = {false};
+
+  /**
+   * @brief An atomic variable indicating that flush().
+   */
+  std::atomic<bool> waiting_flush_ = {false};
+
+  /**
+   * @brief A condition variable used to notify flush().
+   */
+  std::condition_variable flush_done_cv = {};
 };
 
 #endif
