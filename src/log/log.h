@@ -2,21 +2,18 @@
 #define LOG_H_
 
 #include <atomic>
+#include <cassert>
 #include <chrono>
 #include <condition_variable>
-// #include <format> // format haven't been support
-#include <cassert>
 #include <fstream>
 #include <functional>
 #include <list>
 #include <memory>
 #include <mutex>
-#include <ostream>
 #include <source_location>
 #include <string>
 #include <thread>
 #include <type_traits>
-#include <vector>
 
 class Logger {
  protected:
@@ -40,27 +37,33 @@ class Logger {
     FATAL = 5,
   };
 
-  class Formatter {
-   public:
-    virtual std::string operator()(
-        Logger::Level level, const std::string &content, std::thread::id id,
-        const std::source_location location,
-        std::chrono::time_point<std::chrono::system_clock> time) = 0;
-  };
+  using Formatter = std::function<std::string(
+      Logger::Level, const std::string, std::thread::id,
+      const std::source_location,
+      std::chrono::time_point<std::chrono::system_clock>)>;
+
+  static const Formatter default_formatter;
 
   /**
-   * @brief Set some essiential parameters.
-   * @param buf_cell_size The number of logs written by the writer thread at one
-   * time.
-   * @note This method will block the writer thread.
+   * @brief Set the writer for the logger. This method will stop the writer
+   * thread temporarily.
    */
-  bool set(std::unique_ptr<std::fstream> writer, size_t buf_cell_size,
-           std::unique_ptr<Formatter> formatter);
+  bool set(std::unique_ptr<std::fstream> writer);
 
   /**
-   * @brief Set the log level
+   * @brief Set the positive number of logs written by the writer thread at one
+   * time. The default value is 8.
    */
-  void set_level(Level level) { level_ = level; }
+  bool set(size_t write_size) {
+    if (write_size == 0) return false;
+    write_size_ = write_size;
+    return true;
+  }
+
+  /**
+   * @brief Set the log level. The default value is TRACE.
+   */
+  void set(Level level) { level_ = level; }
 
   /**
    * @brief Start the writer thread.
@@ -94,8 +97,9 @@ class Logger {
   bool info(
       const std::string &content,
       std::thread::id id = std::this_thread::get_id(),
-      const std::source_location location = std::source_location::current()) {
-    return log(Level::INFO, content, id, location);
+      const std::source_location location = std::source_location::current(),
+      const Formatter &formatter = default_formatter) {
+    return log(Level::INFO, content, id, location, default_formatter);
   }
   /**
    * @brief Log in warn level.
@@ -103,8 +107,9 @@ class Logger {
   bool warn(
       const std::string &content,
       std::thread::id id = std::this_thread::get_id(),
-      const std::source_location location = std::source_location::current()) {
-    return log(Level::WRAN, content, id, location);
+      const std::source_location location = std::source_location::current(),
+      const Formatter &formatter = default_formatter) {
+    return log(Level::WRAN, content, id, location, default_formatter);
   }
 
   /**
@@ -113,8 +118,9 @@ class Logger {
   bool error(
       const std::string &content,
       std::thread::id id = std::this_thread::get_id(),
-      const std::source_location location = std::source_location::current()) {
-    return log(Level::ERROR, content, id, location);
+      const std::source_location location = std::source_location::current(),
+      const Formatter &formatter = default_formatter) {
+    return log(Level::ERROR, content, id, location, default_formatter);
   }
 
   /**
@@ -123,8 +129,9 @@ class Logger {
   bool debug(
       const std::string &content,
       std::thread::id id = std::this_thread::get_id(),
-      const std::source_location location = std::source_location::current()) {
-    return log(Level::DEBUG, content, id, location);
+      const std::source_location location = std::source_location::current(),
+      const Formatter &formatter = default_formatter) {
+    return log(Level::DEBUG, content, id, location, default_formatter);
   }
 
   /**
@@ -133,8 +140,9 @@ class Logger {
   bool fatal(
       const std::string &content,
       std::thread::id id = std::this_thread::get_id(),
-      const std::source_location location = std::source_location::current()) {
-    return log(Level::FATAL, content, id, location);
+      const std::source_location location = std::source_location::current(),
+      const Formatter &formatter = default_formatter) {
+    return log(Level::FATAL, content, id, location, default_formatter);
   }
 
   /**
@@ -143,16 +151,19 @@ class Logger {
   bool trace(
       const std::string &content,
       std::thread::id id = std::this_thread::get_id(),
-      const std::source_location location = std::source_location::current()) {
-    return log(Level::TRACE, content, id, location);
+      const std::source_location location = std::source_location::current(),
+      const Formatter &formatter = default_formatter) {
+    return log(Level::TRACE, content, id, location, default_formatter);
   }
 
   /**
    * @brief Add log.
    */
-  bool log(Level level, const std::string &content,
-           std::thread::id id = std::this_thread::get_id(),
-           const std::source_location location = std::source_location::current);
+  bool log(
+      Level level, const std::string &content,
+      std::thread::id id = std::this_thread::get_id(),
+      const std::source_location location = std::source_location::current(),
+      const Formatter &formatter = default_formatter);
 
   /**
    * @brief Flush logs.
@@ -181,19 +192,10 @@ class Logger {
   std::list<std::string> logs_ = {};
 
   /**
-   * @brief formatter
-   */
-  std::unique_ptr<Formatter> formatter_ = nullptr;
-
-  /**
    * @brief writer
    */
   WriterPtr writer_ = nullptr;
 
-  /**
-   * @brief Mutex for writer_ and formatter_
-   */
-  std::mutex write_mutex_;
   /**
    * @brief writer thread
    */
@@ -202,7 +204,7 @@ class Logger {
   /**
    * @brief The number of logs written by the writer thread at one time.
    */
-  std::atomic<size_t> buf_cell_size_ = 10;
+  std::atomic<size_t> write_size_ = 8;
 
   /**
    * @brief An atomic variable indicating to the writer to keep running. When
@@ -219,6 +221,11 @@ class Logger {
    * @brief A condition variable used to notify flush().
    */
   std::condition_variable flush_done_cv = {};
+
+  /**
+   * @brief Temporary suspension flag, it is used to update the writer
+   */
+  std::atomic<bool> temporary_stop_ = false;
 };
 
 #endif
