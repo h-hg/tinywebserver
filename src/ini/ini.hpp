@@ -5,18 +5,23 @@
 #include <string_view>
 #include <unordered_map>
 
-#include "../utils/sv.hpp"
-
 class INI {
  public:
-  class Section : public std::unordered_map<std::string, std::string> {
+  using KeyValues = std::unordered_map<std::string, std::string>;
+  class Section : public KeyValues {
    protected:
     std::string name_;
 
    public:
     Section() = default;
 
-    Section(const std::string &name) : name_(name) {}
+    Section(const std::string &name, const KeyValues &data = {})
+        : name_(name), KeyValues(data) {}
+
+    Section &operator=(const KeyValues &body) {
+      *reinterpret_cast<KeyValues *>(this) = body;
+      return *this;
+    }
 
     std::string name() const { return name_; }
 
@@ -35,11 +40,6 @@ class INI {
   ~INI() = default;
 
   /**
-   * @brief Parse INI from std::ifstream
-   */
-  static INI parse(std::ifstream &f, CommentType type = CommentType::POSSIBLE);
-
-  /**
    * @brief Parse INI from std::string_view
    */
   static INI parse(std::string_view content,
@@ -54,7 +54,7 @@ class INI {
    * @brief Update the INI object by another INI object.
    */
   void update(const INI &ini) {
-    for (const auto &[name, sec] : ini.data_) update(sec);
+    for (const auto &[name, sec] : ini.data_) update(name, sec);
   }
 
   /**
@@ -70,6 +70,11 @@ class INI {
   bool remove(const std::string &section_name);
 
   /**
+   * @brief Update Section by key-values pair
+   */
+  void update(const std::string &section_name, const KeyValues &keyvalues);
+
+  /**
    * @brief Update the INI object by a specify Section object.
    */
   void update(const Section &section);
@@ -78,13 +83,23 @@ class INI {
    * @brief Rename the section.
    * @return Return false if the section doesn't exist.
    */
-  bool rename(const std::string &section_name);
+  bool rename(const std::string &section_name,
+              const std::string &new_section_name);
 
   /**
    * @brief Determine whether there is a corresponding section.
    */
   bool has(const std::string &section_name) const {
-    return data_.find(section_name) == data_.end();
+    return data_.find(section_name) != data_.end();
+  }
+
+  /**
+   * @brief Get the Section Object
+   */
+  Section get(const std::string &section_name) const {
+    Section ret;
+    if (auto it = data_.find(section_name); it != data_.end()) ret = it->second;
+    return ret;
   }
 
   /**
@@ -99,6 +114,13 @@ class INI {
    * @return Return false if the section or the key doesn't exist.
    */
   bool remove(const std::string &section_name, const std::string &key);
+
+  /**
+   * @brief Rename the key
+   * @return Return false if the section or the key doesn't exist.
+   */
+  bool rename(const std::string &section_name, const std::string &key,
+              const std::string &new_key);
 
   /**
    * @brief Determine whether there is a key.
@@ -123,25 +145,7 @@ class INI {
       return str[0] == c;
   }
 
-  /**
-   * @brief Get the section object.
-   */
-  const Section *get_section(const std::string section_name) const {
-    auto iter_sec = data_.find(section_name);
-    if (iter_sec == data_.end()) return nullptr;
-    return &(iter_sec->second);
-  }
-
-  /**
-   * @brief Get the section object.
-   */
-  Section *get_section(const std::string section_name) {
-    auto iter_sec = data_.find(section_name);
-    if (iter_sec == data_.end()) return nullptr;
-    return &(iter_sec->second);
-  }
-
-  std::unordered_map<std::string, Section> data_;
+  std::unordered_map<std::string, KeyValues> data_;
 };
 
 #endif
