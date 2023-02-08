@@ -1,7 +1,7 @@
-#include "./request.hpp"
+#include "tinywebserver/network/http/request.h"
 
-#include "../../utils/string.hpp"
-#include "./parser.hpp"
+#include "tinywebserver/network/http/parser.h"
+#include "tinywebserver/utils/string.h"
 
 namespace http {
 

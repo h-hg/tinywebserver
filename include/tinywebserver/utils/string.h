@@ -5,28 +5,36 @@
 #include <cctype>
 #include <string>
 
-std::string& toupper(std::string& str) {
+inline std::string& toupper(std::string& str) {
   std::transform(str.begin(), str.end(), str.begin(),
                  [](unsigned char c) { return std::toupper(c); });
+  return str;
 }
 
-std::string toupper(const std::string& str) {
+inline std::string toupper(const std::string& str) {
   auto ret = str;
   return toupper(str);
 }
 
-std::string toupper(std::string&& str) { return toupper(str); }
-
-std::string& tolower(std::string& str) {
-  std::transform(str.begin(), str.end(), str.begin(),
-                 [](unsigned char c) { return std::tolower(c); });
+inline std::string toupper(std::string&& str) {
+  auto ret = std::move(str);
+  return toupper(ret);
 }
 
-std::string tolower(const std::string& str) {
+inline std::string& tolower(std::string& str) {
+  std::transform(str.begin(), str.end(), str.begin(),
+                 [](unsigned char c) { return std::tolower(c); });
+  return str;
+}
+
+inline std::string tolower(const std::string& str) {
   auto ret = str;
   return tolower(str);
 }
 
-std::string tolower(std::string&& str) { return tolower(str); }
+inline std::string tolower(std::string&& str) {
+  auto ret = std::move(str);
+  return tolower(ret);
+}
 
 #endif

@@ -1,10 +1,10 @@
 
-#include "./parser.hpp"
+#include "tinywebserver/network/http/parser.h"
 
 #include <regex>
 #include <string>
 
-#include "../../utils/sv.hpp"
+#include "tinywebserver/utils/sv.h"
 
 namespace http {
 

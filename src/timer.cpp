@@ -1,4 +1,4 @@
-#include "./timer.hpp"
+#include "tinywebserver/timer.h"
 
 #include <algorithm>
 #include <cassert>
@@ -12,7 +12,7 @@ bool Timer::start() {
   for (auto &ptask : tasks_) ptask->reset_next_run_time(now);
   std::make_heap(tasks_.begin(), tasks_.end(), cmp_);
   running_ = true;
-  thread_ = std::thread(std::bind(worker, this));
+  thread_ = std::thread(&Timer::worker, this);
   return true;
 }
 

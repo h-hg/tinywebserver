@@ -153,7 +153,7 @@ class Timer {
 
   /**
    * @brief Condition variable that is signalled whenever a new function is
-   * added or when the FunctionScheduler is stopped.
+   * added or when the Timer is stopped.
    */
   std::condition_variable running_cv_;
 
@@ -191,12 +191,6 @@ class Timer {
    * @brief To sort the task in tasks_
    */
   PTaskOrder cmp_;
-
-  /**
-   * @brief Condition variable that is signalled whenever a new function is
-   * added or when the FunctionScheduler is stopped.
-   */
-  std::condition_variable running_cv_;
 
   std::atomic<bool> steady_ = false;
 };

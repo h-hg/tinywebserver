@@ -1,3 +1,6 @@
+#ifndef RESOURCE_POOL_H_
+#define RESOURCE_POOL_H
+
 #include <atomic>
 #include <cassert>
 #include <functional>
@@ -247,3 +250,5 @@ ResourcePool<Resource>::~ResourcePool<Resource>() {
     deleter_(p);
   }
 }
+
+#endif

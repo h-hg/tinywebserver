@@ -1,10 +1,11 @@
 
-#include "./ini.hpp"
+
+#include "tinywebserver/ini.h"
 
 #include <sstream>
 #include <stdexcept>
 
-#include "../utils/sv.hpp"
+#include "tinywebserver/utils/sv.h"
 
 INI::Section::operator std::string() const {
   std::stringstream ss;

@@ -5,6 +5,9 @@
 #include <memory>
 #include <string_view>
 
+/**
+ * @brief A buffer using continue memory.
+ */
 class Buffer {
  public:
   /**
@@ -17,6 +20,36 @@ class Buffer {
         begin_ptr_(data_.get()),
         read_ptr_(begin_ptr_),
         write_ptr_(begin_ptr_) {}
+
+  /**
+   * @brief In order to reduce the occurrence of duplicate data, copy
+   * constructors are not allowed.
+   */
+  Buffer(const Buffer&) = delete;
+
+  Buffer(Buffer&& obj)
+      : cap_(obj.cap_),
+        data_(std::move(obj.data_)),
+        begin_ptr_(obj.begin_ptr_),
+        read_ptr_(obj.read_ptr_),
+        write_ptr_(obj.write_ptr_) {
+    obj.begin_ptr_ = obj.read_ptr_ = obj.write_ptr_ = nullptr;
+  }
+
+  /**
+   * @brief In order to reduce the occurrence of duplicate data, copy
+   * operation are not allowed.
+   */
+  Buffer& operator=(const Buffer&) = delete;
+
+  Buffer& operator=(Buffer&& obj) {
+    cap_ = obj.cap_;
+    data_ = std::move(obj.data_);
+    begin_ptr_ = obj.begin_ptr_;
+    read_ptr_ = obj.read_ptr_;
+    write_ptr_ = obj.write_ptr_;
+    obj.begin_ptr_ = obj.read_ptr_ = obj.write_ptr_ = nullptr;
+  }
 
   ~Buffer() = default;
 
@@ -34,10 +67,13 @@ class Buffer {
   char* cur_read_ptr() { return read_ptr_; }
 
   /**
-   * @brief Update the position of read pointer
-   * @note 需要自行判断是否会溢出缓冲区。
+   * @brief Update the position of read pointer. step will be set to
+   * readable_size() if step > readable_size();
    */
-  char* update_read_ptr(size_t step) { return read_ptr_ += step; }
+  char* update_read_ptr(size_t step) {
+    step = std::min(step, readable_size());
+    return read_ptr_ += step;
+  }
 
   /**
    * @brief Get the view of buffer
@@ -77,7 +113,7 @@ class Buffer {
   /**
    * @brief Make sure the Buffer can write data of the specified size
    */
-  void ensuren_writeable(size_t size) {
+  void ensure_writeable(size_t size) {
     if (writeable_size() >= size) return;
     auto move_size = readable_size();
     if ((read_ptr_ - begin_ptr_) + writeable_size() > size) {
@@ -117,7 +153,7 @@ class Buffer {
    * @brief Write data with the specified size to the Buffer
    */
   Buffer& write(const char* str, size_t size) {
-    ensuren_writeable(size);
+    ensure_writeable(size);
     // write the data
     std::copy(str, str + size, write_ptr_);
     // update write pointer

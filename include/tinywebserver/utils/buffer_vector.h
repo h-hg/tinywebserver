@@ -1,5 +1,5 @@
-#ifndef BUFFERVECTOR_H_
-#define BUFFERVECTOR_H_
+#ifndef BUFFER_VECTOR_H_
+#define BUFFER_VECTOR_H_
 
 #include <sys/uio.h>
 
@@ -59,6 +59,7 @@ class BufferVector {
           size(obj.size),
           readonly(obj.readonly),
           deleter(std::move(obj.deleter)) {
+      // clear
       obj.data = nullptr;
       obj.cap = obj.size = 0;
       obj.deleter = nullptr;
@@ -66,10 +67,23 @@ class BufferVector {
 
     Segment& operator=(const Segment&) = delete;
 
-    Segment& operator=(Segment&&) = delete;
+    Segment& operator=(Segment&& obj) {
+      data = std::move(obj.data);
+      cap = obj.cap;
+      size = obj.size;
+      readonly = obj.readonly;
+      deleter = std::move(obj.deleter);
+      // clear
+      obj.data = nullptr;
+      obj.cap = obj.size = 0;
+      obj.deleter = nullptr;
+    }
 
     ~Segment() {
-      if (deleter != nullptr) deleter(data, size);
+      if (deleter != nullptr) {
+        deleter(data, size);
+        deleter = nullptr;
+      }
       data = nullptr;
       cap = size = 0;
     }
@@ -155,7 +169,7 @@ class BufferVector {
   /**
    * @brief Make sure the BufferVector can write data of the specified size
    */
-  void ensuren_writeable(size_t size) {
+  void ensure_writeable(size_t size) {
     size_t remain = writeable_size();
     // Make sure there is always space left
     if (remain > size) return;
@@ -187,7 +201,7 @@ class BufferVector {
    * @brief Write data with the specified size to the Buffer
    */
   BufferVector& write(const char* src, size_t size) {
-    ensuren_writeable(size);
+    ensure_writeable(size);
     while (size > 0) {
       auto& cur_data = data_[write_index_];
       auto cnt = cur_data.write(src, size, n_write_);

@@ -2,7 +2,7 @@
 #include <sstream>
 // #include <format> // format haven't been support
 
-#include "./log.h"
+#include "tinywebserver/log.h"
 
 Logger::Formatter default_formatter =
     [](Logger::Level level, const std::string content,

@@ -4,9 +4,9 @@
 #include <string>
 #include <vector>
 
-#include "../../utils/sv.hpp"
-#include "./form.hpp"
-#include "./header.hpp"
+#include "tinywebserver/network/http/form.h"
+#include "tinywebserver/network/http/header.h"
+#include "tinywebserver/utils/sv.h"
 
 namespace http {
 

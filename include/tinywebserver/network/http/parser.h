@@ -3,8 +3,8 @@
 
 #include <string_view>
 
-#include "./form.hpp"
-#include "./header.hpp"
+#include "tinywebserver/network/http/form.h"
+#include "tinywebserver/network/http/header.h"
 
 namespace http {
 
