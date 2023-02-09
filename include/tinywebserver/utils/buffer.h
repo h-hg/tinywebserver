@@ -57,10 +57,18 @@ class Buffer {
    * @brief Get the readable size
    */
   size_t readable_size() const { return write_ptr_ - read_ptr_; }
+
+  /**
+   * @brief Determine whether the readable data is empty.
+   */
+  bool readable_empty() const { return write_ptr_ == read_ptr_; }
+
   /**
    * @brief Get the current read pointer
    */
+
   const char* cur_read_ptr() const { return read_ptr_; }
+
   /**
    * @brief Get the current read pointer
    */
