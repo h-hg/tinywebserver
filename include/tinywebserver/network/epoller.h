@@ -69,6 +69,8 @@ class Epoller {
 
   epoll_event& operator[](int i) { return events_[i]; }
 
+  const epoll_event& operator[](int i) const { return events_[i]; }
+
   /**
    * @brief Get the number of fd on the epoll tree.
    */

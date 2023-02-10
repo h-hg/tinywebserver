@@ -14,7 +14,8 @@ class Buffer {
    * @brief Construct the buffer.
    * @param capacity the initial size of the Buffer
    */
-  Buffer(size_t capacity)
+  inline static const size_t default_capacity = 1024 * 4;
+  Buffer(size_t capacity = default_capacity)
       : cap_(capacity),
         data_(std::make_unique<char[]>(cap_)),
         begin_ptr_(data_.get()),

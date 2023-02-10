@@ -1,7 +1,12 @@
+
+# file(GLOB_RECURSE HEADERS  "../include/*.hpp" "../include/*.h")
+
 set(
   SOURCES
   network/http/parser.cpp
   network/http/request.cpp
+  network/http/request_parser.cpp
+  network/http/server.cpp
   ini.cpp
   log.cpp
   main.cpp

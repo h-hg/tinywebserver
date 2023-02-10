@@ -323,13 +323,14 @@ class BufferVector {
    * copying if we use something like mmap.
    * @param deleter The function to free buffer
    */
-  void write(char* buffer, size_t size,
-             std::function<void(char*, size_t)>&& deleter,
-             bool readonly = true) {
+  BufferVector& write(char* buffer, size_t size,
+                      std::function<void(char*, size_t)>&& deleter,
+                      bool readonly = true) {
     mark_current_full_written();
     it_write_ = data_.emplace(
         it_write_, Segment(buffer, size, std::move(deleter), readonly));
     forward_writer();
+    return *this;
   }
 
   /**
