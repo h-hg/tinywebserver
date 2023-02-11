@@ -7,6 +7,7 @@
 #include <sys/epoll.h>
 #include <unistd.h>
 
+#include <atomic>
 #include <vector>
 
 class Epoller {
@@ -23,10 +24,11 @@ class Epoller {
    */
   bool add(int fd, epoll_event event, int* p_errno = nullptr) {
     if (fd < 0) return false;
-    auto res = epoll_ctl(epfd_, EPOLL_CTL_ADD, fd, &event);
-    if (p_errno != nullptr) *p_errno = errno;
-    if (res != 0) return false;
-    if (++n_fd_ > events_.size()) events_.resize(n_fd_);
+    if (epoll_ctl(epfd_, EPOLL_CTL_ADD, fd, &event) != 0) {
+      if (p_errno != nullptr) *p_errno = errno;
+      return false;
+    }
+    if (++n_fd_ > events_.size()) events_.resize(n_fd_ + 1);
     return true;
   }
 
@@ -35,9 +37,11 @@ class Epoller {
    */
   bool mod(int fd, epoll_event event, int* p_errno = nullptr) {
     if (fd < 0) return false;
-    auto res = epoll_ctl(epfd_, EPOLL_CTL_MOD, fd, &event);
-    if (p_errno != nullptr) *p_errno = errno;
-    return res == 0;
+    if (epoll_ctl(epfd_, EPOLL_CTL_MOD, fd, &event) != 0) {
+      if (p_errno != nullptr) *p_errno = errno;
+      return false;
+    }
+    return true;
   }
 
   /**
@@ -46,19 +50,27 @@ class Epoller {
   bool del(int fd, int* p_errno = nullptr) {
     if (fd < 0) return false;
     epoll_event ev = {0};
-    auto res = epoll_ctl(epfd_, EPOLL_CTL_DEL, fd, &ev);
-    if (p_errno != nullptr) *p_errno = errno;
-    if (res != 0) return false;
-    if (--n_fd_ > events_.size() * 2) events_.resize(n_fd_);
+    if (epoll_ctl(epfd_, EPOLL_CTL_DEL, fd, &ev) != 0) {
+      if (p_errno != nullptr) *p_errno = errno;
+      return false;
+    }
+    if (--n_fd_ > events_.size() * 2) events_.resize(n_fd_ + 1);
     return true;
   }
 
   /**
-   * @brief Epoll wait
+   * @brief Epoll wait. It
+   * @note While one thread is blocked in a call to epoll_pwait(), it is
+   * possible for another thread to add a file descriptor to the waited-upon
+   * epoll instance. If the new file descriptor becomes ready, it will cause the
+   * epoll_wait() call to unblock.
    */
   int wait(int timeout = -1, int* p_errno = nullptr) {
     auto res = epoll_wait(epfd_, &events_[0], n_fd_, timeout);
-    if (p_errno != nullptr) *p_errno = errno;
+    if (res == -1) {
+      if (p_errno != nullptr) *p_errno = errno;
+      return -1;
+    }
     return res;
   }
 
@@ -80,7 +92,7 @@ class Epoller {
   /**
    * @brief Number of fd on the epoll tree.
    */
-  int n_fd_;
+  std::atomic<int> n_fd_;
 
   /**
    * @brief Descriptor for epoll

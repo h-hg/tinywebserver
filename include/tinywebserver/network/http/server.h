@@ -3,11 +3,14 @@
 #ifndef HTTP_SERVER_
 #define HTTP_SERVER_
 
+#include <atomic>
 #include <cstdint>
+#include <memory>
 #include <string>
+#include <unordered_map>
 
 #include "tinywebserver/network/epoller.h"
-#include "tinywebserver/network/http/request.h"
+#include "tinywebserver/network/http/request_parser.h"
 #include "tinywebserver/network/http/response_writer.h"
 #include "tinywebserver/pool/thread_pool.hpp"
 
@@ -15,7 +18,7 @@ namespace http {
 
 class Server {
  public:
-  using HttpHandler = std::function<void(ResponseWriter &, const Request &)>;
+  using HTTPHandler = std::function<void(ResponseWriter &, const Request &)>;
 
  protected:
   class Connection {
@@ -24,23 +27,32 @@ class Server {
      * @param fd File descriptor of client socket
      * @param is_et Whether fd is in the edge triger mode.
      */
-    Connection(int fd, sockaddr_in addr, bool is_et = true)
+    Connection(int fd = -1, sockaddr_in addr = {}, bool is_et = true)
         : fd_(fd), addr_(addr), is_et_(is_et) {}
+
+    ~Connection() { this->close(); }
+
+    void init();
 
     /**
      * @brief Write HTTP Reponse to the client fd
      */
     void write();
 
-    void close();
+    bool close() {
+      if (fd_ == -1) return false;
+      ::close(fd_);
+      fd_ = -1;
+      return true;
+    }
 
-   protected:
+    // protected:
     /**
      * @brief fd of client
      */
-    int fd_;
+    int fd_ = -1;
 
-    bool is_et_;
+    bool is_et_ = true;
 
     /**
      * @brief Address of client
@@ -48,15 +60,28 @@ class Server {
     sockaddr_in addr_;
 
     ResponseWriter resp_writer_;
-    Request req_;
+    RequestParser req_parser_;
   };
 
  public:
-  bool register_handler(const std::string &prefix, HttpHandler &&handler);
+  ~Server() {
+    if (listen_fd_ != -1) close(listen_fd_);
+  }
 
-  bool listen(const std::string address, uint16_t port);
+  bool register_handler(const std::string &prefix, HTTPHandler &&handler) {
+    prefix_to_handler_[prefix] = std::move(handler);
+    return true;
+  }
+
+  bool listen(uint16_t port, const std::string address);
 
   bool start();
+
+  bool stop() {
+    if (running_ == false) return false;
+    running_ = true;
+    return true;
+  }
 
   /**
    * @brief Set the triger mode of listen fd and client fd.
@@ -67,6 +92,10 @@ class Server {
 
  protected:
   void acceptor();
+
+  void on_read(int fd);
+
+  void on_read(int fd);
 
   /**
    * @brief Listening file descriptor
@@ -85,7 +114,22 @@ class Server {
    */
   uint32_t client_event_ = EPOLLONESHOT | EPOLLRDHUP;
 
-  epoll_event event;
+  std::atomic<bool> running_ = {false};
+
+  /**
+   * @brief Client file descriptor to Connection.
+   */
+  std::unordered_map<int, Connection> client_fd_to_con_;
+
+  /**
+   * @brief HTTP request URI prefix to HTTPHandler
+   */
+  std::unordered_map<std::string, HTTPHandler> prefix_to_handler_;
+
+  /**
+   * @brief Thread pool
+   */
+  ThreadPool threadpool_;
 };
 
 }  // namespace http

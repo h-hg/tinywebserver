@@ -42,9 +42,11 @@ class RequestParser : public Parser {
   static bool parse_request_line(std::string_view line, Request &obj);
 
   /**
-   * @brief Read data from Linux file descriptor
+   * @brief consume data from Linux file descriptor
+   * @param fd socket file descriptor
+   * @param is_et whether fd is in the edge triger mode
    */
-  State read_from_fd(int fd, bool is_nonblock = true) {}
+  State consume_from_fd(int fd, bool is_et = true) {}
 
   /**
    * @brief Clear the state of parser.
