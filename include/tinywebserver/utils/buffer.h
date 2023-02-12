@@ -67,7 +67,6 @@ class Buffer {
   /**
    * @brief Get the current read pointer
    */
-
   const char* cur_read_ptr() const { return read_ptr_; }
 
   /**
@@ -103,21 +102,6 @@ class Buffer {
    * @brief Get the current write pointer
    */
   char* cur_write_ptr() { return write_ptr_; }
-
-  /**
-   * @brief Get the readable size
-   */
-  size_t readable_size() const { return write_ptr_ - read_ptr_; }
-
-  /**
-   * @brief Get the current read pointer
-   */
-  const char* cur_read_ptr() const { return read_ptr_; }
-
-  /**
-   * @brief Get the current read pointer
-   */
-  char* cur_read_ptr() { return read_ptr_; }
 
   /**
    * @brief Make sure the Buffer can write data of the specified size

@@ -72,7 +72,7 @@ bool Server::listen(uint16_t port, const std::string address) {
   }
 
   // add to epoll tree
-  if (epoller_.add(listen_fd_, listen_fd_event_ | EPOLLIN, nullptr) == false) {
+  if (epoller_.add(listen_fd_, listen_fd_event_ | EPOLLIN) == false) {
     ::close(listen_fd_);
     listen_fd_ = -1;
     return false;
@@ -148,7 +148,7 @@ void Server::on_read(int fd) {
     ret = conn.read(read_errno);
     if (ret < 0 && read_errno != EAGAIN) {
       // no need to response
-      this->epoller_.mod(conn.fd_, this->client_event_ | EPOLLIN, nullptr);
+      this->epoller_.mod(conn.fd_, this->client_event_ | EPOLLIN);
       return;
     }
 
@@ -156,8 +156,7 @@ void Server::on_read(int fd) {
     conn.process();
     conn.make_response();
 
-    bool ret =
-        this->epoller_.mod(conn.fd_, this->client_event_ | EPOLLOUT, nullptr);
+    bool ret = this->epoller_.mod(conn.fd_, this->client_event_ | EPOLLOUT);
     if (!ret) close(conn.fd);
   });
 }
@@ -175,12 +174,12 @@ void Server::on_write(int fd) {
     ret = conn.write(write_errno);
     if (ret < 0) {  // if error occurs when writing to socket fd
       if (write_errno == EAGAIN) {
-        this->epoller_.mod(conn.fd_, this->client_event_ | EPOLLOUT, nullptr);
+        this->epoller_.mod(conn.fd_, this->client_event_ | EPOLLOUT);
       } else {
         this->close(conn.fd_);
       }
     } else if (conn.keep_alive_) {
-      this->epoller_.mod(conn.fd_, this->client_event_ | EPOLLIN, nullptr);
+      this->epoller_.mod(conn.fd_, this->client_event_ | EPOLLIN);
     } else {
       this->close(conn.fd_);
     }
