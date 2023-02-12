@@ -20,10 +20,14 @@ class Epoller {
   ~Epoller() { close(epfd_); }
 
   /**
-   * @brief Add fd to the epoll tree
+   * @brief Add fd with events to the epoll tree
    */
-  bool add(int fd, epoll_event event, int* p_errno = nullptr) {
+  bool add(int fd, uint32_t events, int* p_errno = nullptr) {
     if (fd < 0) return false;
+    epoll_event event = {0};
+    event.events = events;
+    event.data.fd = fd;
+
     if (epoll_ctl(epfd_, EPOLL_CTL_ADD, fd, &event) != 0) {
       if (p_errno != nullptr) *p_errno = errno;
       return false;
@@ -35,8 +39,11 @@ class Epoller {
   /**
    * @brief Modify listening event on the epoll tree
    */
-  bool mod(int fd, epoll_event event, int* p_errno = nullptr) {
+  bool mod(int fd, uint32_t events, int* p_errno = nullptr) {
     if (fd < 0) return false;
+    epoll_event event = {0};
+    event.events = events;
+    event.data.fd = fd;
     if (epoll_ctl(epfd_, EPOLL_CTL_MOD, fd, &event) != 0) {
       if (p_errno != nullptr) *p_errno = errno;
       return false;

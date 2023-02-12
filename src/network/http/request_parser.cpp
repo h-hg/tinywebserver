@@ -21,4 +21,12 @@ bool RequestParser::parse_request_line(std::string_view line, Request &obj) {
   }
 };
 
+bool RequestParser::parse_request_line(Request &obj) {
+  return RequestParser::parse_request_line(buf_.view(), obj);
+}
+
+bool RequestParser::parse_header(Header &obj) {
+  return Parser::parse_header(buf_.view(), obj);
+}
+
 }  // namespace http

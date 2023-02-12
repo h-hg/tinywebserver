@@ -72,11 +72,7 @@ bool Server::listen(uint16_t port, const std::string address) {
   }
 
   // add to epoll tree
-  epoll_event event;
-  memset(&event, 0, sizeof(event));
-  event.events = listen_fd_event_;
-  event.data.fd = listen_fd_;
-  if (epoller_.add(listen_fd_, event, nullptr) == false) {
+  if (epoller_.add(listen_fd_, listen_fd_event_ | EPOLLIN, nullptr) == false) {
     ::close(listen_fd_);
     listen_fd_ = -1;
     return false;
@@ -101,17 +97,18 @@ bool Server::start() {
         acceptor();
       } else if (event.events & (EPOLLRDHUP | EPOLLHUP | EPOLLERR)) {
         // close fd
+        close(fd);
       } else if (event.events & EPOLLIN) {
         // readable
+        on_read(fd);
       } else if (event.events & EPOLLOUT) {
         // writeable
+        on_write(fd);
       } else {
         // log unknown event
       }
     }
   }
-  // todo
-  return true;
 }
 
 void Server::acceptor() {
@@ -124,21 +121,125 @@ void Server::acceptor() {
   } while (listen_fd_event_ & EPOLLET);
 }
 
+bool Server::close(int fd) {
+  if (client_fd_to_conn_.count(fd)) {  // 服务器端关闭连接
+    client_fd_to_conn_[fd].close();
+    client_fd_to_conn_.erase(fd);
+  }
+}
+
 void Server::on_read(int fd) {
   // todo: update expire time
-  auto it = this->client_fd_to_con_.find(fd);
-  if (it == client_fd_to_con_.end()) {
+  auto it = this->client_fd_to_conn_.find(fd);
+  if (it == client_fd_to_conn_.end()) {
     // todo close fd;
     return;
   }
-  auto &con = it->second;
+  auto &conn = it->second;
 
-  threadpool_.push_task([this, &con]() {
-    do {
-      int error = 0;
-      auto state = 0;
-    } while ()
+  threadpool_.push_task([this, &conn]() {
+    // do {
+    //   int error = 0;
+    //   auto state = 0;
+    // } while (conn.is_et_ & EPOLLET);
+
+    // read data into conn
+    int ret = -1, read_errno = 0;
+    ret = conn.read(read_errno);
+    if (ret < 0 && read_errno != EAGAIN) {
+      // no need to response
+      this->epoller_.mod(conn.fd_, this->client_event_ | EPOLLIN, nullptr);
+      return;
+    }
+
+    conn.parse_request();
+    conn.process();
+    conn.make_response();
+
+    bool ret =
+        this->epoller_.mod(conn.fd_, this->client_event_ | EPOLLOUT, nullptr);
+    if (!ret) close(conn.fd);
   });
+}
+
+void Server::on_write(int fd) {
+  auto it = this->client_fd_to_conn_.find(fd);
+  if (it == client_fd_to_conn_.end()) {
+    // todo close fd;
+    return;
+  }
+  auto conn & = it->second;
+
+  threadpool_.push_task([this, &conn]() {
+    int ret = -1, write_errno = 0;
+    ret = conn.write(write_errno);
+    if (ret < 0) {  // if error occurs when writing to socket fd
+      if (write_errno == EAGAIN) {
+        this->epoller_.mod(conn.fd_, this->client_event_ | EPOLLOUT, nullptr);
+      } else {
+        this->close(conn.fd_);
+      }
+    } else if (conn.keep_alive_) {
+      this->epoller_.mod(conn.fd_, this->client_event_ | EPOLLIN, nullptr);
+    } else {
+      this->close(conn.fd_);
+    }
+  });
+}
+
+int Server::Connection::read(int &read_errno) {
+  int ret = req_parser_.consume_from_fd(conn.fd_, conn.is_et_);
+  if (ret < 0) read_errno = errno;
+  return ret;
+}
+
+int Server::Connection::write(int &write_errno) {
+  // todo
+}
+
+bool Server::Connection::parse_request() {
+  parse_success_ = false;
+  if (!req_parser_.parse_request_line(req_) || !ret =
+          req_parser_.parse_header(req_.header)) {
+    return false;
+  }
+
+  // todo parse request body
+
+  parse_success_ = true;
+  return true;
+}
+
+bool Server::Connection::process() {
+  // todo process request
+  keep_alive_ = req_.is_keepalive();
+}
+
+bool Server::Connection::make_response() {
+  if (!parse_success_) {
+    status_ = Response::StatusCode::BAD_REQUEST;
+    resp_writer_.set_srcpath("");  // todo: set srcpath to 400.html
+  }
+
+  struct stat *mmfile_stat = resp_writer_.mmfilestat();
+  if (stat((resp_writer_.srcpath()).data(), mmfile_stat) < 0 ||
+      S_ISDIR(mmfile_stat->st_mode)) {
+    status_ = Response::StatusCode::NOT_FOUND;
+  } else if (!(mmfile_stat->st_mode & S_IROTH)) {
+    code_ = Response::StatusCode::FORBIDDEN;
+  } else if (code_ == Response::StatusCode::INVALID_CODE) {
+    code_ = Response::StatusCode::OK;
+  }
+
+  resp_writer_.set_version("HTTP/1.1");
+
+  if (!Response::CodeToStatus.count(status_)) {
+    status_ = Response::StatusCode::BAD_REQUEST;
+  }
+  resp_writer_.set_status(status);
+  resp_writer_.set_desc(Response::CodeToStatus.find(status_)->second));
+
+  // todo: set header and map src file to memory
 }
 
 }  // namespace http

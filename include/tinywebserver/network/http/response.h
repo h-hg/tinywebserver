@@ -83,6 +83,13 @@ class Response {
     NOT_EXTENDED = 510,
     NETWORK_AUTHENTICATION_REQUIRED = 511,
   };
+
+  static const unordered_map<int, std::string> CodeToStatus{
+      {StatusCode::OK : "OK"},
+      {StatusCode::BAD_REQUEST : "BAD_REQUEST"},
+      {StatusCode::FORBIDDEN : "FORBIDDEN"},
+      {StatusCode::NOT_FOUND : "NOT_FOUND"}};
+
   std::string version() { return version_; }
   void set_version(const std::string& version) { version_ = version; }
 

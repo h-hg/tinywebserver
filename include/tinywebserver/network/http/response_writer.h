@@ -1,5 +1,8 @@
 // todo
 
+#include <sys/mman.h>
+#include <sys/stat.h>
+
 #include "tinywebserver/network/http/response.h"
 #include "tinywebserver/utils/buffer_vector.h"
 
@@ -14,6 +17,11 @@ class ResponseWriter {
 
   std::string desc() { return resp_.desc(); }
   void set_desc(const std::string& desc) { resp_.set_desc(desc); }
+
+  std::string srcpath() { return srcpath_; }
+  void set_srcpath(const std::string& srcpath) { srcpath_ = src; }
+
+  struct stat& mmfilestat() { return mmfile_stat_; }
 
   Header& header() { return resp_.header(); }
   const Header& header() const { return resp_.header(); }

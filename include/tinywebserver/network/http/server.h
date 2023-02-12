@@ -3,6 +3,8 @@
 #ifndef HTTP_SERVER_
 #define HTTP_SERVER_
 
+#include <sys/socket.h>
+
 #include <atomic>
 #include <cstdint>
 #include <memory>
@@ -35,9 +37,30 @@ class Server {
     void init();
 
     /**
-     * @brief Write HTTP Reponse to the client fd
+     * @brief Write HTTP Reponse_writer.buf_ to the client fd
      */
-    void write();
+    int write(int &write_errno);
+
+    /**
+     * @brief Read HTTP Request from the client fd to buffer_in
+     * @return error code, 0 for success, -1 for error
+     */
+    int read(int &read_errno);
+
+    /*
+     * @brief parse buffer_in data into struct header
+     */
+    bool parse_request();
+
+    /*
+     * @brief business logic requested by header
+     */
+    bool process();
+
+    /*
+     * @brief make response according to parse_success and srcpath
+     */
+    bool make_response();
 
     bool close() {
       if (fd_ == -1) return false;
@@ -46,7 +69,7 @@ class Server {
       return true;
     }
 
-    // protected:
+   protected:
     /**
      * @brief fd of client
      */
@@ -54,13 +77,19 @@ class Server {
 
     bool is_et_ = true;
 
+    bool keep_alive_ = true;
+
     /**
      * @brief Address of client
      */
     sockaddr_in addr_;
 
     ResponseWriter resp_writer_;
-    RequestParser req_parser_;
+    RequestParser req_parser_;  // save buffer_in and provide parse function
+    Request req_;
+
+    int status_ = Response::StatusCode::INVALID_CODE;
+    bool parse_success_ = true;
   };
 
  public:
@@ -75,7 +104,12 @@ class Server {
 
   bool listen(uint16_t port, const std::string address);
 
+  /*
+   * @brief main thread loop for waiting for epoller
+   */
   bool start();
+
+  bool close(int fd);
 
   bool stop() {
     if (running_ == false) return false;
@@ -93,9 +127,15 @@ class Server {
  protected:
   void acceptor();
 
+  /*
+   * @brief handle EPOLLIN event
+   */
   void on_read(int fd);
 
-  void on_read(int fd);
+  /*
+   * @brief handle EPOLLOUT event
+   */
+  void on_write(int fd);
 
   /**
    * @brief Listening file descriptor
@@ -119,7 +159,7 @@ class Server {
   /**
    * @brief Client file descriptor to Connection.
    */
-  std::unordered_map<int, Connection> client_fd_to_con_;
+  std::unordered_map<int, Connection> client_fd_to_conn_;
 
   /**
    * @brief HTTP request URI prefix to HTTPHandler

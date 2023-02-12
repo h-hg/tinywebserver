@@ -39,7 +39,7 @@ class RequestParser : public Parser {
    * @brief Parse the http request line.
    * @return return false if something errors occur.
    */
-  static bool parse_request_line(std::string_view line, Request &obj);
+  static bool parse_request_line(std::string_view line, Request& obj);
 
   /**
    * @brief consume data from Linux file descriptor
@@ -47,6 +47,12 @@ class RequestParser : public Parser {
    * @param is_et whether fd is in the edge triger mode
    */
   State consume_from_fd(int fd, bool is_et = true) {}
+
+  bool parse_request_line(Request& obj);
+
+  bool parse_header(Header& obj);
+
+
 
   /**
    * @brief Clear the state of parser.
