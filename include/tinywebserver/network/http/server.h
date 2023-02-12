@@ -137,6 +137,14 @@ class Server {
    */
   void on_write(int fd);
 
+  /*
+   * @brief match URI and prefix
+   */
+  auto prefix_match() {
+    // todo
+    return prefix_to_handler_.end();
+  }
+
   /**
    * @brief Listening file descriptor
    */
@@ -165,6 +173,8 @@ class Server {
    * @brief HTTP request URI prefix to HTTPHandler
    */
   std::unordered_map<std::string, HTTPHandler> prefix_to_handler_;
+
+  HTTPHandler default_handler_;
 
   /**
    * @brief Thread pool

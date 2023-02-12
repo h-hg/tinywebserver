@@ -125,6 +125,7 @@ bool Server::close(int fd) {
   if (client_fd_to_conn_.count(fd)) {  // 服务器端关闭连接
     client_fd_to_conn_[fd].close();
     client_fd_to_conn_.erase(fd);
+    epoller_.del(fd);
   }
 }
 
@@ -203,42 +204,63 @@ bool Server::Connection::parse_request() {
     return false;
   }
 
-  // todo parse request body
-
   parse_success_ = true;
+  keep_alive_ = req_.is_keepalive();
   return true;
 }
 
 bool Server::Connection::process() {
-  // todo process request
-  keep_alive_ = req_.is_keepalive();
+  auto it = prefix_match(req_.uri(), prefix_to_handler_);
+  if (it == prefix_to_handler_.end()) {
+    default_handler(resp_writer_, req_);  // callback
+  } else {
+    it->second(resp_writer_, req_);  // callback
+  }
+  // we assume handler put status into resp_writer_.resp_.status(optional) and
+  // put file content into resp_writer.buf_
 }
+
+Server::default_handler_ =
+    [](ResponseWriter &resp_writer, const Request &req) {
+      resp_writer.resp_.body = std::move(vector<char>{'h','e','l','l','o'});
+    }
 
 bool Server::Connection::make_response() {
   if (!parse_success_) {
     status_ = Response::StatusCode::BAD_REQUEST;
     resp_writer_.set_srcpath("");  // todo: set srcpath to 400.html
+    struct stat *mmfile_stat = resp_writer_.mmfilestat();
+    if (stat((resp_writer_.srcpath()).data(), mmfile_stat) < 0 ||
+        S_ISDIR(mmfile_stat->st_mode) || !(mmfile_stat->st_mode & S_IROTH)) {
+      return false;
+    }
+    // 将 line, header, bad request 文件写入 resp.buf_
+    return true;
   }
 
-  struct stat *mmfile_stat = resp_writer_.mmfilestat();
-  if (stat((resp_writer_.srcpath()).data(), mmfile_stat) < 0 ||
-      S_ISDIR(mmfile_stat->st_mode)) {
-    status_ = Response::StatusCode::NOT_FOUND;
-  } else if (!(mmfile_stat->st_mode & S_IROTH)) {
-    code_ = Response::StatusCode::FORBIDDEN;
-  } else if (code_ == Response::StatusCode::INVALID_CODE) {
-    code_ = Response::StatusCode::OK;
-  }
-
+  // 封装报文
   resp_writer_.set_version("HTTP/1.1");
 
+  if (status_ == Response::StatusCode::INVALID_CODE) {
+    status_ = Response::StatusCode::OK;
+  }
   if (!Response::CodeToStatus.count(status_)) {
     status_ = Response::StatusCode::BAD_REQUEST;
   }
   resp_writer_.set_status(status);
-  resp_writer_.set_desc(Response::CodeToStatus.find(status_)->second));
+  resp_writer_.set_desc(Response::CodeToStatus.find(status_)->second);
 
-  // todo: set header and map src file to memory
+  BufferVector header_buf;
+  header_buf.write(resp_writer_.version() + " " + resp_writer_.status() + " " +
+                   resp_writer_.desc() + "\r\n");
+  // write response into resp_writer.buf_
+  if (resp_writer_.buf_.readable_empty()) {
+    resp_writer_.buf_ = header_buf
+  } else {
+    BufferVector header_buf(resp_writer_.buf_);
+    resp_writer_.buf_ = header_buf;
+    resp_writer_.buf_.write();
+  }
 }
 
 }  // namespace http
