@@ -81,7 +81,7 @@ class BufferVector {
     Segment& operator=(const Segment&) = delete;
 
     Segment& operator=(Segment&& obj) {
-      if (*this == obj) return *this;
+      if (this == &obj) return *this;
       data = obj.data;
       cap = obj.cap;
       begin = obj.begin;
@@ -181,10 +181,12 @@ class BufferVector {
   BufferVector& operator=(const BufferVector&) = delete;
 
   BufferVector& operator=(BufferVector&& obj) {
-    if (*this == obj) return *this;
+    if (this == &obj) return *this;
     data_ = std::move(obj.data_);
     cap_ = obj.cap_;
-    n_read_ = obj.n_read_, n_write_ = obj.n_write_, it_write_ = obj.it_write_;
+    n_read_ = obj.n_read_;
+    n_write_ = obj.n_write_;
+    it_write_ = obj.it_write_;
     obj.destory();
   }
 
