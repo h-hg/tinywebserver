@@ -70,9 +70,10 @@ bool Server::listen(uint16_t port, const std::string address) {
     listen_fd_ = -1;
     return false;
   }
-
+  epoll_event ev = {.events = listen_fd_event_ | EPOLLIN,
+                    .data.fd = listen_fd_};
   // add to epoll tree
-  if (epoller_.add(listen_fd_, listen_fd_event_ | EPOLLIN) == false) {
+  if (epoller_.add(listen_fd_, ev) == false) {
     ::close(listen_fd_);
     listen_fd_ = -1;
     return false;
@@ -96,7 +97,7 @@ bool Server::start() {
         acceptor();
       } else if (event.events & (EPOLLRDHUP | EPOLLHUP | EPOLLERR)) {
         // close fd
-        this->close(fd);
+        this->close_client(fd);
       } else if (event.events & EPOLLIN) {
         // readable
         on_read(fd);
@@ -150,130 +151,75 @@ void Server::on_read(int client_fd) {
     /**
      * @todo 服务器内部错误，只能把该连接关了
      */
-  }
-
-  threadpool_.push_task([this, &conn]() {
-    // do {
-    //   int error = 0;
-    //   auto state = 0;
-    // } while (conn.is_et_ & EPOLLET);
-
-    // read data into conn
-    int ret = -1, read_errno = 0;
-    ret = conn.read(read_errno);
-    if (ret < 0 && read_errno != EAGAIN) {
-      // no need to response
-      this->epoller_.mod(conn.fd_, this->client_event_ | EPOLLIN);
-      return;
-    }
-
-    conn.parse_request();
-    conn.process();
-    conn.make_response();
-
-    bool ret = this->epoller_.mod(conn.fd_, this->client_event_ | EPOLLOUT);
-    if (!ret) close_client(conn.fd);
-  });
-}
-
-void Server::on_write(int fd) {
-  auto it = this->clients_.find(fd);
-  if (it == clients_.end()) {
-    // todo close fd;
     return;
   }
-  auto conn & = it->second;
 
-  threadpool_.push_task([this, &conn]() {
-    int ret = -1, write_errno = 0;
-    ret = conn.write(write_errno);
-    if (ret < 0) {  // if error occurs when writing to socket fd
-      if (write_errno == EAGAIN) {
-        this->epoller_.mod(conn.fd_, this->client_event_ | EPOLLOUT);
-      } else {
-        this->close_client(conn.fd_);
-      }
-    } else if (conn.keep_alive_) {
-      this->epoller_.mod(conn.fd_, this->client_event_ | EPOLLIN);
+  // read data from fd
+  auto [state, req] = conn_ptr->parse_request_from_fd();
+  if (RequestParser::is_error_state(state)) {
+    // todo 发送错误原因
+    this->close_client(client_fd);
+    return;
+  }
+  if (req == nullptr) {
+    epoll_event ev = {.events = this->client_event_ | EPOLLIN,
+                      .data.fd = client_fd};
+    bool ret = this->epoller_.mod(client_fd, ev);
+    if (!ret) {
+      // todo 服务器内部错误
+      close_client(client_fd);
+    }
+    return;
+  }
+
+  // todo 这里从 request 中获取是否要设置 keep-alive
+
+  // find the http handler
+  auto handler = this->handler_mgr_.match(req->uri());
+  if (handler == nullptr) {
+    // todo 发送找不到 handler 的错误信息
+    // 或者尝试使用 default handler
+    this->close_client(client_fd);
+    return;
+  }
+  (*handler)(conn_ptr->get_response_writer(), *req);
+
+  conn_ptr->make_response();
+  epoll_event ev = {.events = this->client_event_ | EPOLLOUT,
+                    .data.fd = client_fd};
+  bool ret = this->epoller_.mod(client_fd, ev);
+  if (!ret) {
+    // 服务器内部错误
+    close_client(client_fd);
+  }
+}
+
+void Server::on_write(int client_fd) {
+  auto conn_ptr = get_connection(client_fd);
+  // todo: update expire time
+  if (conn_ptr == nullptr) {
+    /**
+     * @todo 服务器内部错误，只能把该连接关了
+     */
+    return;
+  }
+
+  auto &bv = conn_ptr->response();
+  // todo 写一个加强版本的 iov 专门负责 更新读写指针。
+  auto iov = bv.get_read_iovec();
+
+  int ret = -1, write_errno = 0;
+  ret = conn.write(write_errno);
+  if (ret < 0) {  // if error occurs when writing to socket fd
+    if (write_errno == EAGAIN) {
+      this->epoller_.mod(conn.fd_, this->client_event_ | EPOLLOUT);
     } else {
       this->close_client(conn.fd_);
     }
-  });
-}
-
-int Server::Connection::read(int &read_errno) {
-  int ret = req_parser_.consume_from_fd(conn.fd_, conn.is_et_);
-  if (ret < 0) read_errno = errno;
-  return ret;
-}
-
-int Server::Connection::write(int &write_errno) {
-  // todo
-}
-
-bool Server::Connection::parse_request() {
-  parse_success_ = false;
-  if (!req_parser_.parse_request_line(req_) || !ret =
-          req_parser_.parse_header(req_.header)) {
-    return false;
-  }
-
-  parse_success_ = true;
-  keep_alive_ = req_.is_keepalive();
-  return true;
-}
-
-bool Server::Connection::process() {
-  auto it = prefix_match(req_.uri(), prefix_to_handler_);
-  if (it == prefix_to_handler_.end()) {
-    default_handler(resp_writer_, req_);  // callback
+  } else if (conn.keep_alive_) {
+    this->epoller_.mod(conn.fd_, this->client_event_ | EPOLLIN);
   } else {
-    it->second(resp_writer_, req_);  // callback
-  }
-  // we assume handler put status into resp_writer_.resp_.status(optional) and
-  // put file content into resp_writer.buf_
-}
-
-Server::default_handler_ =
-    [](ResponseWriter &resp_writer, const Request &req) {
-      resp_writer.resp_.body = std::move(vector<char>{'h','e','l','l','o'});
-    }
-
-bool Server::Connection::make_response() {
-  if (!parse_success_) {
-    status_ = Response::StatusCode::BAD_REQUEST;
-    resp_writer_.set_srcpath("");  // todo: set srcpath to 400.html
-    struct stat *mmfile_stat = resp_writer_.mmfilestat();
-    if (stat((resp_writer_.srcpath()).data(), mmfile_stat) < 0 ||
-        S_ISDIR(mmfile_stat->st_mode) || !(mmfile_stat->st_mode & S_IROTH)) {
-      return false;
-    }
-    // 将 line, header, bad request 文件写入 resp.buf_
-    return true;
-  }
-
-  // 封装报文
-  resp_writer_.set_version("HTTP/1.1");
-
-  if (status_ == Response::StatusCode::INVALID_CODE) {
-    status_ = Response::StatusCode::OK;
-  }
-  if (!Response::CodeToStatus.count(status_)) {
-    status_ = Response::StatusCode::BAD_REQUEST;
-  }
-  resp_writer_.set_status(status);
-  resp_writer_.set_desc(Response::CodeToStatus.find(status_)->second);
-
-  BufferVector header_buf;
-  header_buf.write(resp_writer_.version() + " " + resp_writer_.status() + " " +
-                   resp_writer_.desc() + "\r\n");
-  // write response into resp_writer.buf_
-  if (resp_writer_.buf_.readable_empty()) {
-    resp_writer_.buf_ = header_buf
-  } else {
-    BufferVector header_buf(resp_writer_.buf_);
-    resp_writer_.buf_ = header_buf;
-    resp_writer_.buf_.write();
+    this->close_client(conn.fd_);
   }
 }
 

@@ -34,36 +34,39 @@ class Server {
 
     ~Connection() { this->close(); }
 
-    void init();
+    int fd() const { return fd_; }
 
     /**
-     * @brief Write HTTP Reponse_writer.buf_ to the client fd
+     * @brief Parsing HTPP Request from file descriptor
      */
-    int write(int &write_errno);
+    auto parse_request_from_fd() {
+      return req_parser_.consume_from_fd(fd_, is_et_);
+    }
 
-    /**
-     * @brief Read HTTP Request from the client fd to buffer_in
-     * @return error code, 0 for success, -1 for error
-     */
-    int read(int &read_errno);
+    auto &get_response_writer() { return resp_writer_; }
 
-    /*
-     * @brief parse buffer_in data into struct header
-     */
-    bool parse_request();
+    const auto &get_response_writer() const { return resp_writer_; }
 
-    /*
-     * @brief business logic requested by header
-     */
-    bool process();
+    bool keep_alive() const { return keep_alive_; }
 
+    auto client_address() const -> auto{ return addr_; }
     /*
      * @brief make response according to parse_success and srcpath
      */
-    bool make_response();
+    bool make_response() {
+      full_resp_.clear();
+      // todo response line
+      full_resp_.write(std::string(resp_writer_.header()));
+      // todo 设置为 frient class 才能读取
+      // full_resp_.write(std::move(resp_writer_.buf_));
+    }
+
+    auto &response() { return full_resp_; }
+
+    const auto &response() const { return full_resp_; }
 
     /**
-     * @brief Close the Server
+     * @brief Close the Connection.
      */
     bool close() {
       if (fd_ == -1) return false;
@@ -88,11 +91,10 @@ class Server {
     sockaddr_in addr_;
 
     ResponseWriter resp_writer_;
-    RequestParser req_parser_;  // save buffer_in and provide parse function
-    Request req_;
 
-    int status_ = Response::StatusCode::INVALID_CODE;
-    bool parse_success_ = true;
+    RequestParser req_parser_;
+
+    BufferVector full_resp_;
   };
 
  public:
@@ -149,12 +151,12 @@ class Server {
   /*
    * @brief handle EPOLLIN event
    */
-  void on_read(int fd);
+  void on_read(int client_fd);
 
   /*
    * @brief handle EPOLLOUT event
    */
-  void on_write(int fd);
+  void on_write(int client_fd);
 
   /**
    * @brief Listening file descriptor
