@@ -8,20 +8,20 @@
 #include <atomic>
 #include <cstdint>
 #include <memory>
+#include <shared_mutex>
 #include <string>
 #include <unordered_map>
 
 #include "tinywebserver/network/epoller.h"
+#include "tinywebserver/network/http/handler.h"
 #include "tinywebserver/network/http/request_parser.h"
 #include "tinywebserver/network/http/response_writer.h"
 #include "tinywebserver/pool/thread_pool.hpp"
+#include "tinywebserver/timer.hpp"
 
 namespace http {
 
 class Server {
- public:
-  using HTTPHandler = std::function<void(ResponseWriter &, const Request &)>;
-
  protected:
   class Connection {
    public:
@@ -62,6 +62,9 @@ class Server {
      */
     bool make_response();
 
+    /**
+     * @brief Close the Server
+     */
     bool close() {
       if (fd_ == -1) return false;
       ::close(fd_);
@@ -97,9 +100,11 @@ class Server {
     if (listen_fd_ != -1) close(listen_fd_);
   }
 
-  bool register_handler(const std::string &prefix, HTTPHandler &&handler) {
-    prefix_to_handler_[prefix] = std::move(handler);
-    return true;
+  /**
+   * @brief Register the HTTP handler.
+   */
+  bool handle(const std::string &prefix, HTTPHandler &&handler) {
+    return handler_mgr_.handle(prefix, std::move(handler));
   }
 
   bool listen(uint16_t port, const std::string address);
@@ -109,7 +114,10 @@ class Server {
    */
   bool start();
 
-  bool close(int fd);
+  /**
+   * @brief Close client
+   */
+  bool close_client(int client_fd);
 
   bool stop() {
     if (running_ == false) return false;
@@ -125,6 +133,17 @@ class Server {
   void set_triger_mode(bool is_listen_et = true, bool is_client_et = true);
 
  protected:
+  /**
+   * @brief Get the HTTP Connection by client fd.
+   */
+  Connection *get_connection(int client_fd) {
+    std::shared_lock lock(clients_mutex_);
+    if (auto it = clients_.find(client_fd); it != clients_.end())
+      return (it->second).get();
+    else
+      return nullptr;
+  }
+
   void acceptor();
 
   /*
@@ -137,19 +156,14 @@ class Server {
    */
   void on_write(int fd);
 
-  /*
-   * @brief match URI and prefix
-   */
-  auto prefix_match() {
-    // todo
-    return prefix_to_handler_.end();
-  }
-
   /**
    * @brief Listening file descriptor
    */
   int listen_fd_ = -1;
 
+  /**
+   * @brief The operation of Linux epoll api
+   */
   Epoller epoller_;
 
   /**
@@ -165,21 +179,34 @@ class Server {
   std::atomic<bool> running_ = {false};
 
   /**
-   * @brief Client file descriptor to Connection.
+   * @brief File descriptor to HTTP Connection
    */
-  std::unordered_map<int, Connection> client_fd_to_conn_;
+  std::unordered_map<int, std::unique_ptr<Connection>> clients_;
 
   /**
-   * @brief HTTP request URI prefix to HTTPHandler
+   * @brief The mutex for clients_
    */
-  std::unordered_map<std::string, HTTPHandler> prefix_to_handler_;
+  std::shared_mutex clients_mutex_;
 
+  /**
+   * @brief HTTP Handler Manager
+   */
+  HandlerManager handler_mgr_;
+
+  /**
+   * @todo
+   */
   HTTPHandler default_handler_;
 
   /**
    * @brief Thread pool
    */
   ThreadPool threadpool_;
+
+  /**
+   * @brief Timer
+   */
+  Timer<int> timer_;
 };
 
 }  // namespace http

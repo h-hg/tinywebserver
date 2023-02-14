@@ -26,9 +26,16 @@ int main() {
   }
   http::Server server;
   // set server
+
+  server.handle("/", [](http::ResponseWriter &resp, const http::Request &req) {
+    // todo
+    });
+
   uint16_t port = std::stoi(ini.get("server", "port", "8888"));
   server.listen(port, ini.get("server", "adress"));
+
   // todo
   server.start();
+
   return 0;
 }

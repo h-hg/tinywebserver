@@ -43,8 +43,14 @@ class KVHeap {
 
   ~KVHeap() = default;
 
-  const Value &top() { return heap_[0].value; }
+  /**
+   * @note Return const reference to avoid being modified by callers.
+   */
+  const Value &top() const { return heap_[0].value; }
 
+  /**
+   * @return The key and the value.
+   */
   std::pair<Key, Value> pop() {
     std::pair<Key, Value> ret = {heap_.front().key,
                                  std::move(heap_.front().value)};

@@ -50,6 +50,15 @@ class Request {
 
   Form parse_form() const;
 
+  void clear() {
+    method_ = Method::UNKNOWN;
+    uri_.clear();
+    protocol_.clear();
+    version_.clear();
+    header_.clear();
+    body_.clear();
+  }
+
  protected:
   Method method_ = Method::UNKNOWN;
   std::string uri_;

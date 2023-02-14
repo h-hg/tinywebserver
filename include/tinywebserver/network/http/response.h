@@ -84,11 +84,11 @@ class Response {
     NETWORK_AUTHENTICATION_REQUIRED = 511,
   };
 
-  static const unordered_map<int, std::string> CodeToStatus{
-      {StatusCode::OK : "OK"},
-      {StatusCode::BAD_REQUEST : "BAD_REQUEST"},
-      {StatusCode::FORBIDDEN : "FORBIDDEN"},
-      {StatusCode::NOT_FOUND : "NOT_FOUND"}};
+  inline static const std::unordered_map<int, std::string> CodeToStatus{
+      {StatusCode::OK, "OK"},
+      {StatusCode::BAD_REQUEST, "BAD_REQUEST"},
+      {StatusCode::FORBIDDEN, "FORBIDDEN"},
+      {StatusCode::NOT_FOUND, "NOT_FOUND"}};
 
   std::string version() { return version_; }
   void set_version(const std::string& version) { version_ = version; }
@@ -104,6 +104,14 @@ class Response {
 
   auto& body() { return body_; };
   const auto& body() const { return body_; }
+
+  void clear() {
+    version_.clear();
+    status_ = StatusCode::INVALID_CODE;
+    desc_.clear();
+    header_.clear();
+    body_.clear();
+  }
 
  protected:
   std::string version_;

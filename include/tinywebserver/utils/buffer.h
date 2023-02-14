@@ -104,6 +104,15 @@ class Buffer {
   char* cur_write_ptr() { return write_ptr_; }
 
   /**
+   * @brief Update the position of write pointer. step will be set to
+   * writeable_size() if step > writeable_size();
+   */
+  char* update_write_ptr(size_t step) {
+    step = std::min(step, writeable_size());
+    return write_ptr_ += step;
+  }
+
+  /**
    * @brief Make sure the Buffer can write data of the specified size
    */
   void ensure_writeable(size_t size) {

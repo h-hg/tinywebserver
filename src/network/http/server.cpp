@@ -87,9 +87,8 @@ bool Server::start() {
   if (listen_fd_ == -1 || running_) return false;
 
   while (running_) {
-    int error = 0;
-    int n = epoller_.wait(-1, &error);
-    if (n == -1 && ((error == ECONNABORTED || error == EINTR))) continue;
+    int n = epoller_.wait(-1);
+    if (n == -1 && (errno == ECONNABORTED || errno == EINTR)) continue;
     for (int i = 0; i < n; ++i) {
       auto event = epoller_[i];
       int fd = event.data.fd;
@@ -97,7 +96,7 @@ bool Server::start() {
         acceptor();
       } else if (event.events & (EPOLLRDHUP | EPOLLHUP | EPOLLERR)) {
         // close fd
-        close(fd);
+        this->close(fd);
       } else if (event.events & EPOLLIN) {
         // readable
         on_read(fd);
@@ -111,32 +110,47 @@ bool Server::start() {
   }
 }
 
+/**
+ * finish
+ */
 void Server::acceptor() {
+  // lock the clients_
+  std::lock_guard lock(clients_mutex_);
+
   struct sockaddr_in addr;
   socklen_t len = sizeof(addr);
   do {
     int fd = accept(listen_fd_, (struct sockaddr *)&addr, &len);
-    if (fd <= 0) return;
-    // todo
+    if (fd <= 0) break;
+    clients_.emplace(
+        fd, std::make_unique<Connection>(fd, addr, client_event_ & EPOLLET));
   } while (listen_fd_event_ & EPOLLET);
 }
 
-bool Server::close(int fd) {
-  if (client_fd_to_conn_.count(fd)) {  // 服务器端关闭连接
-    client_fd_to_conn_[fd].close();
-    client_fd_to_conn_.erase(fd);
-    epoller_.del(fd);
+/**
+ * @brief finish
+ */
+bool Server::close_client(int client_fd) {
+  std::lock_guard lock(clients_mutex_);
+  if (auto it = clients_.find(client_fd); it != clients_.end()) {
+    auto &con = *(it->second);
+    con.close();
+    clients_.erase(it);
+    epoller_.del(client_fd);
   }
 }
 
-void Server::on_read(int fd) {
+/**
+ * @todo
+ */
+void Server::on_read(int client_fd) {
+  auto conn_ptr = get_connection(client_fd);
   // todo: update expire time
-  auto it = this->client_fd_to_conn_.find(fd);
-  if (it == client_fd_to_conn_.end()) {
-    // todo close fd;
-    return;
+  if (conn_ptr == nullptr) {
+    /**
+     * @todo 服务器内部错误，只能把该连接关了
+     */
   }
-  auto &conn = it->second;
 
   threadpool_.push_task([this, &conn]() {
     // do {
@@ -158,13 +172,13 @@ void Server::on_read(int fd) {
     conn.make_response();
 
     bool ret = this->epoller_.mod(conn.fd_, this->client_event_ | EPOLLOUT);
-    if (!ret) close(conn.fd);
+    if (!ret) close_client(conn.fd);
   });
 }
 
 void Server::on_write(int fd) {
-  auto it = this->client_fd_to_conn_.find(fd);
-  if (it == client_fd_to_conn_.end()) {
+  auto it = this->clients_.find(fd);
+  if (it == clients_.end()) {
     // todo close fd;
     return;
   }
@@ -177,12 +191,12 @@ void Server::on_write(int fd) {
       if (write_errno == EAGAIN) {
         this->epoller_.mod(conn.fd_, this->client_event_ | EPOLLOUT);
       } else {
-        this->close(conn.fd_);
+        this->close_client(conn.fd_);
       }
     } else if (conn.keep_alive_) {
       this->epoller_.mod(conn.fd_, this->client_event_ | EPOLLIN);
     } else {
-      this->close(conn.fd_);
+      this->close_client(conn.fd_);
     }
   });
 }
