@@ -236,7 +236,7 @@ class KVHeap {
   /**
    * @brief Compare
    */
-  std::function<bool(const Node &, const Node &)> cmp_;
+  Compare cmp_;
 
   /**
    * @brief Key to the index of heap_

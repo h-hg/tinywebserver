@@ -30,6 +30,33 @@ class RequestParser : public Parser {
     COMPLETE,
   };
 
+  RequestParser() = default;
+
+  ~RequestParser() = default;
+
+  RequestParser(const RequestParser &) = delete;
+
+  RequestParser(RequestParser &&obj)
+      : buf_(std::move(obj.buf_)),
+        state_(obj.state_),
+        obj_(std::move(obj.obj_)),
+        req_body_size_(obj.req_body_size_) {
+    obj.clear();
+  }
+
+  RequestParser &operator=(const RequestParser &) = delete;
+
+  RequestParser &operator=(RequestParser &&obj) {
+    if (this == &obj) return *this;
+    buf_ = std::move(obj.buf_);
+    state_ = obj.state_;
+    obj_ = std::move(obj.obj_);
+    req_body_size_ = obj.req_body_size_;
+
+    obj.clear();
+    return *this;
+  }
+
   /**
    * @brief Determine whether it is a error state
    */
@@ -66,10 +93,11 @@ class RequestParser : public Parser {
    * @brief Parse the http request line.
    * @return return false if something errors occur.
    */
-  static bool parse_request_line(std::string_view line, Request& obj);
+  static bool parse_request_line(std::string_view line, Request &obj);
 
  protected:
   Buffer buf_;
+
   State state_ = State::INIT;
 
   std::unique_ptr<Request> obj_;

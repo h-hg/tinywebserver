@@ -15,6 +15,28 @@ class ResponseWriter {
   friend Connection;
 
  public:
+  ResponseWriter() = default;
+
+  ~ResponseWriter() = default;
+
+  ResponseWriter(const ResponseWriter&) = delete;
+
+  ResponseWriter(ResponseWriter&& obj)
+      : resp_(std::move(obj.resp_)), buf_(std::move(obj.buf_)) {
+    obj.clear();
+  }
+
+  ResponseWriter& operator=(const ResponseWriter&) = delete;
+
+  ResponseWriter& operator=(ResponseWriter&& obj) {
+    if (this == &obj) return *this;
+    resp_ = std::move(obj.resp_);
+    buf_ = std::move(obj.buf_);
+
+    obj.clear();
+    return *this;
+  }
+
   std::string version() { return resp_.version(); }
   void set_version(const std::string& version) { resp_.set_version(version); }
 
@@ -43,6 +65,11 @@ class ResponseWriter {
              std::function<void(char*, size_t)>&& deleter,
              bool readonly = true) {
     buf_.write(buffer, size, std::move(deleter), readonly);
+  }
+
+  void clear() {
+    resp_.clear();
+    buf_.clear();
   }
 
  protected:

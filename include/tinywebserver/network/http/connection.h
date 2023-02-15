@@ -22,24 +22,31 @@ class Connection {
 
   ~Connection() { this->close(); }
 
-  int fd() const { return fd_; }
+  Connection(const Connection &) = delete;
+
+  // Connection(Connection &&obj) {
+  //   // todo
+  // }
 
   /**
    * @brief Parsing HTPP Request from file descriptor
    * @param is_et Whether fd is in the edge triger mode.
    */
-  auto parse_request_from_fd(bool is_et) {
+  std::pair<RequestParser::State, std::unique_ptr<Request>>
+  parse_request_from_fd(bool is_et) {
     if (req_parser_ == nullptr) req_parser_ = std::make_unique<RequestParser>();
 
     auto p = req_parser_->consume_from_fd(fd_, is_et);
     if (p.second != nullptr) {
       keep_alive_ = p.second->is_keepalive();
     }
-    return p;
+
+    return {p.first, std::move(p.second)};
   }
 
   ResponseWriter &response_writer() {
-    if (req_parser_ == nullptr) req_parser_ = std::make_unique<RequestParser>();
+    if (resp_writer_ == nullptr)
+      resp_writer_ = std::make_unique<ResponseWriter>();
     return *resp_writer_;
   }
 
@@ -50,6 +57,7 @@ class Connection {
    */
   auto address() const -> auto{ return addr_; }
 
+  int fd() const { return fd_; }
   /*
    * @brief make response according to parse_success and srcpath
    */
@@ -117,11 +125,11 @@ class ConnectionManger {
       return nullptr;
   }
 
-  Connection *add(int fd, Connection &&conn) {
+  Connection *add(int fd, std::unique_ptr<Connection> sptr) {
     std::lock_guard lock(conn_mutex_);
     auto it = conn_.find(fd);
     if (it == conn_.end()) return nullptr;
-    auto sptr = std::make_unique<Connection>(std::move(conn));
+
     auto ptr = sptr.get();
     conn_.emplace(fd, std::move(sptr));
     return ptr;

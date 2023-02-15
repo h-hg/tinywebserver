@@ -1,5 +1,5 @@
 #ifndef RESOURCE_POOL_H_
-#define RESOURCE_POOL_H
+#define RESOURCE_POOL_H_
 
 #include <atomic>
 #include <cassert>
@@ -102,7 +102,14 @@ class ResourcePool {
   /**
    * @brief Destroy the all the resources.
    */
-  ~ResourcePool();
+  ~ResourcePool() {
+    std::lock_guard lock(res_mutex_);
+    while (!res_.empty()) {
+      auto p = res_.front();
+      res_.pop();
+      deleter_(p);
+    }
+  }
 
   /**
    * @brief Get the number of resources that are in the pool. The return value
@@ -141,18 +148,51 @@ class ResourcePool {
    * @todo The lifetime of the ResourcePool should be longer than the return
    * value.
    */
-  std::shared_ptr<Resource> get();
+  std::shared_ptr<Resource> get() {
+    std::unique_lock lock(res_mutex_);
+    free_res(lock);
+    if (res_.empty()) alloc_res(lock);
+    if (res_.empty()) return nullptr;
+    auto p = res_.front();
+    res_.pop();
+    return std::shared_ptr<Resource>(p, std::bind(ResourcePool::recycle, this));
+  }
 
  protected:
   /**
    * @brief Allocate resources.
    */
-  void alloc_res(std::unique_lock<std::mutex> &lock);
+  void alloc_res(std::unique_lock<std::mutex> &lock) {
+    // check the lock
+    assert(lock.mutex() == &res_mutex_);
+    assert(lock.owns_lock());
+
+    if (total_count_ >= max_count_) return;
+    for (size_t i = 0,
+                n = std::min(alloc_count_, max_count_ - size_t(total_count_));
+         i < n; ++i) {
+      res_.push(alloc_());
+      ++total_count_;
+    }
+  }
 
   /**
    * @brief Free the resources that exceeding max_count_
    */
-  void free_res(std::unique_lock<std::mutex> &lock);
+  void free_res(std::unique_lock<std::mutex> &lock) {
+    // check the lock
+    assert(lock.mutex() == &res_mutex_);
+    assert(lock.owns_lock());
+
+    if (total_count_ < max_count_) return;
+    for (size_t i = 0, n = std::min(res_.size(), total_count_ - max_count_);
+         i < n; ++i) {
+      auto p = res_.front();
+      res_.pop();
+      deleter_(p);
+      --total_count_;
+    }
+  }
 
   /**
    * @brief Recyle the resource into pool.
@@ -198,57 +238,5 @@ class ResourcePool {
    */
   size_t alloc_count_ = 0;
 };
-
-template <typename Resource>
-void ResourcePool<Resource>::alloc_res(std::unique_lock<std::mutex> &lock) {
-  // check the lock
-  assert(lock.mutex() == &res_mutex_);
-  assert(lock.owns_lock());
-
-  if (total_count_ >= max_count_) return;
-  for (size_t i = 0,
-              n = std::min(alloc_count_, max_count_ - size_t(total_count_));
-       i < n; ++i) {
-    res_.push(alloc_());
-    ++total_count_;
-  }
-}
-
-template <typename Resource>
-void ResourcePool<Resource>::free_res(std::unique_lock<std::mutex> &lock) {
-  // check the lock
-  assert(lock.mutex() == &res_mutex_);
-  assert(lock.owns_lock());
-
-  if (total_count_ < max_count_) return;
-  for (size_t i = 0, n = std::min(res_.size(), total_count_ - max_count_);
-       i < n; ++i) {
-    auto p = res_.front();
-    res_.pop();
-    deleter_(p);
-    --total_count_;
-  }
-}
-
-template <typename Resource>
-std::shared_ptr<Resource> ResourcePool<Resource>::get() {
-  std::unique_lock lock(res_mutex_);
-  free_res(lock);
-  if (res_.empty()) alloc_res(lock);
-  if (res_.empty()) return nullptr;
-  auto p = res_.front();
-  res_.pop();
-  return std::shared_ptr<Resource>(p, std::bind(ResourcePool::recycle, this));
-}
-
-template <typename Resource>
-ResourcePool<Resource>::~ResourcePool<Resource>() {
-  std::lock_guard lock(res_mutex_);
-  while (!res_.empty()) {
-    auto p = res_.front();
-    res_.pop();
-    deleter_(p);
-  }
-}
 
 #endif

@@ -24,7 +24,7 @@ bool RequestParser::parse_request_line(std::string_view line, Request &obj) {
 };
 
 std::pair<RequestParser::State, std::unique_ptr<Request>>
-RequestParser::consume_from_fd(int fd, bool is_et = true) {
+RequestParser::consume_from_fd(int fd, bool is_et) {
   // read data from file descriptor
   ssize_t total_read = 0;
   do {
@@ -135,6 +135,7 @@ RequestParser::consume_from_fd(int fd, bool is_et = true) {
         return {state_, nullptr};
     }
   }
+  return {state_, state_ == State::COMPLETE ? std::move(obj_) : nullptr};
 }
 
 }  // namespace http

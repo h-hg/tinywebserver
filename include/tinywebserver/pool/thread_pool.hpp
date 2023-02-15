@@ -15,7 +15,7 @@
 
 class ThreadPool {
  public:
-   inline static const unsigned int default_thread_count =
+  inline static const unsigned int default_thread_count =
       std::thread::hardware_concurrency();
 
   /**
@@ -49,7 +49,14 @@ class ThreadPool {
    * task, use submit() instead, and call the wait() member function of the
    * generated future.
    */
-  void wait_for_tasks();
+  void wait_for_tasks() {
+    waiting_ = true;
+    std::unique_lock tasks_lock(tasks_mutex_);
+    task_done_cv_.wait(tasks_lock, [this] {
+      return (tasks_total_ == (paused_ ? tasks_.size() : 0));
+    });
+    waiting_ = false;
+  }
 
   /**
    * @brief Get the number of threads in the pool.
@@ -121,7 +128,18 @@ class ThreadPool {
    * implementation. This is usually determined by the number of cores in the
    * CPU. If a core is hyperthreaded, it will count as two threads.
    */
-  void reset(unsigned int thread_count = 0);
+  void reset(unsigned int thread_count = 0) {
+    // saving the state
+    const bool was_paused = paused_;
+    paused_ = true;
+    wait_for_tasks();
+    destroy_threads();
+    thread_count_ = determine_thread_count(thread_count);
+    threads_ = std::make_unique<std::thread[]>(thread_count);
+    // restore the state
+    paused_ = was_paused;
+    create_threads();
+  }
 
   /**
    * @brief Push a function with zero or more arguments, but no return value,
@@ -139,7 +157,16 @@ class ThreadPool {
    */
 
   template <typename F, typename... A>
-  void push_task(F&& task, A&&... args);
+  void push_task(F&& task, A&&... args) {
+    std::function<void()> task_function =
+        std::bind(std::forward<F>(task), std::forward<A>(args)...);
+    {
+      const std::scoped_lock tasks_lock(tasks_mutex_);
+      tasks_.push(task_function);
+    }
+    ++tasks_total_;
+    task_avail_cv_.notify_one();
+  }
 
   /**
    * @brief Submit a function with zero or more arguments into the task queue.
@@ -161,7 +188,27 @@ class ThreadPool {
   template <
       typename F, typename... A,
       typename R = std::invoke_result_t<std::decay_t<F>, std::decay_t<A>...>>
-  std::future<R> submit(F&& task, A&&... args);
+  std::future<R> submit(F&& task, A&&... args) {
+    std::function<R()> task_function =
+        std::bind(std::forward<F>(task), std::forward<A>(args)...);
+    auto task_promise = std::make_shared<std::promise<R>>();
+    push_task([task_function, task_promise] {
+      try {
+        if constexpr (std::is_void_v<R>) {
+          std::invoke(task_function);
+          task_promise->set_value();
+        } else {
+          task_promise->set_value(std::invoke(task_function));
+        }
+      } catch (...) {
+        try {
+          task_promise->set_exception(std::current_exception());
+        } catch (...) {
+        }
+      }
+    });
+    return task_promise->get_future();
+  }
 
  protected:
   /**
@@ -179,18 +226,34 @@ class ThreadPool {
    * @return The number of threads to use for constructing the pool.
    */
   static auto determine_thread_count(unsigned int thread_count)
-      -> decltype(thread_count);
+      -> decltype(thread_count) {
+    if (thread_count > 0)
+      return thread_count;
+    else if (auto cnt = std::thread::hardware_concurrency(); cnt > 0)
+      return cnt;
+    else
+      return 1;
+  }
 
   /**
    * @brief Create the threads in the pool and assign a worker to each thread.
    */
-  void create_threads();
+  void create_threads() {
+    running_ = true;
+    for (decltype(thread_count_) i = 0; i < thread_count_; ++i)
+      threads_[i] = std::thread(&ThreadPool::worker, this);
+  }
 
   /**
    * @brief Destroy the threads in the pool. If there are some tasks still
    * running, it will wait for these tasks.
    */
-  void destroy_threads();
+  void destroy_threads() {
+    running_ = false;
+    task_avail_cv_.notify_all();
+    for (decltype(thread_count_) i = 0; i < thread_count_; ++i)
+      threads_[i].join();
+  }
 
   /**
    * @brief A worker function to be assigned to each thread in the pool. Waits
@@ -198,7 +261,22 @@ class ThreadPool {
    * retrieves the task from the queue and executes it. Once the task finishes,
    * the worker notifies wait_for_tasks() in case it is waiting.
    */
-  void worker();
+  void worker() {
+    while (running_) {
+      std::unique_lock tasks_lock(tasks_mutex_);
+      task_avail_cv_.wait(tasks_lock,
+                          [this] { return !tasks_.empty() || !running_; });
+      if (running_ && !paused_) {
+        std::function<void()> task = std::move(tasks_.front());
+        tasks_.pop();
+        tasks_lock.unlock();
+        task();
+        tasks_lock.lock();
+        --tasks_total_;
+        if (waiting_) task_done_cv_.notify_one();
+      }
+    }
+  }
 
   /**
    * @brief An atomic variable indicating whether the workers should pause. When
@@ -260,100 +338,4 @@ class ThreadPool {
   std::unique_ptr<std::thread[]> threads_ = nullptr;
 };
 
-template <typename F, typename... A>
-void ThreadPool::push_task(F&& task, A&&... args) {
-  std::function<void()> task_function =
-      std::bind(std::forward<F>(task), std::forward<A>(args)...);
-  {
-    const std::scoped_lock tasks_lock(tasks_mutex_);
-    tasks_.push(task_function);
-  }
-  ++tasks_total_;
-  task_avail_cv_.notify_one();
-}
-
-template <typename F, typename... A, typename R>
-std::future<R> ThreadPool::submit(F&& task, A&&... args) {
-  std::function<R()> task_function =
-      std::bind(std::forward<F>(task), std::forward<A>(args)...);
-  auto task_promise = std::make_shared<std::promise<R>>();
-  push_task([task_function, task_promise] {
-    try {
-      if constexpr (std::is_void_v<R>) {
-        std::invoke(task_function);
-        task_promise->set_value();
-      } else {
-        task_promise->set_value(std::invoke(task_function));
-      }
-    } catch (...) {
-      try {
-        task_promise->set_exception(std::current_exception());
-      } catch (...) {
-      }
-    }
-  });
-  return task_promise->get_future();
-}
-
-auto ThreadPool::determine_thread_count(unsigned int thread_count)
-    -> decltype(thread_count) {
-  if (thread_count > 0)
-    return thread_count;
-  else if (auto cnt = std::thread::hardware_concurrency(); cnt > 0)
-    return cnt;
-  else
-    return 1;
-}
-
-void ThreadPool::create_threads() {
-  running_ = true;
-  for (decltype(thread_count_) i = 0; i < thread_count_; ++i)
-    threads_[i] = std::thread(&ThreadPool::worker, this);
-}
-
-void ThreadPool::wait_for_tasks() {
-  waiting_ = true;
-  std::unique_lock tasks_lock(tasks_mutex_);
-  task_done_cv_.wait(tasks_lock, [this] {
-    return (tasks_total_ == (paused_ ? tasks_.size() : 0));
-  });
-  waiting_ = false;
-}
-
-void ThreadPool::destroy_threads() {
-  running_ = false;
-  task_avail_cv_.notify_all();
-  for (decltype(thread_count_) i = 0; i < thread_count_; ++i)
-    threads_[i].join();
-}
-
-void ThreadPool::reset(unsigned int thread_count) {
-  // saving the state
-  const bool was_paused = paused_;
-  paused_ = true;
-  wait_for_tasks();
-  destroy_threads();
-  thread_count_ = determine_thread_count(thread_count);
-  threads_ = std::make_unique<std::thread[]>(thread_count);
-  // restore the state
-  paused_ = was_paused;
-  create_threads();
-}
-
-void ThreadPool::worker() {
-  while (running_) {
-    std::unique_lock tasks_lock(tasks_mutex_);
-    task_avail_cv_.wait(tasks_lock,
-                        [this] { return !tasks_.empty() || !running_; });
-    if (running_ && !paused_) {
-      std::function<void()> task = std::move(tasks_.front());
-      tasks_.pop();
-      tasks_lock.unlock();
-      task();
-      tasks_lock.lock();
-      --tasks_total_;
-      if (waiting_) task_done_cv_.notify_one();
-    }
-  }
-}
 #endif

@@ -228,6 +228,7 @@ class BufferVector {
     n_write_ = obj.n_write_;
     it_write_ = obj.it_write_;
     obj.destory();
+    return *this;
   }
 
   ~BufferVector() { destory(); }

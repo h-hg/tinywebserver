@@ -17,11 +17,9 @@ class Buffer {
   inline static const size_t default_capacity = 1024 * 4;
 
   Buffer(size_t capacity = default_capacity)
-      : cap_(capacity),
-        data_(std::make_unique<char[]>(cap_)),
-        begin_ptr_(data_.get()),
-        read_ptr_(begin_ptr_),
-        write_ptr_(begin_ptr_) {}
+      : cap_(capacity), data_(std::make_unique<char[]>(capacity)) {
+    begin_ptr_ = read_ptr_ = write_ptr_ = data_.get();
+  }
 
   /**
    * @brief In order to reduce the occurrence of duplicate data, copy

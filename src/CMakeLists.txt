@@ -11,6 +11,7 @@ set(
   ini.cpp
   log.cpp
   main.cpp
+  # debug.cpp
 )
 
 

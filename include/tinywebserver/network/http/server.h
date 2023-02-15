@@ -38,7 +38,7 @@ class Server {
   /*
    * @brief main thread loop for waiting for epoller
    */
-  bool start();
+  void start();
 
   bool stop() {
     if (running_ == false) return false;
@@ -51,7 +51,12 @@ class Server {
    * @param is_listen_et Whether listen fd uses edge triger
    * @param is_client_et Whether client fd uses edge triger
    */
-  void set_triger_mode(bool is_listen_et = true, bool is_client_et = true);
+  void set_triger_mode(bool is_listen_et = true, bool is_client_et = true) {
+    listen_fd_event_ = EPOLLRDHUP;
+    client_event_ = EPOLLONESHOT | EPOLLRDHUP;
+    if (is_listen_et) listen_fd_event_ |= EPOLLET;
+    if (is_client_et) client_event_ |= EPOLLET;
+  }
 
  protected:
   void acceptor();

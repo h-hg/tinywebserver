@@ -134,7 +134,7 @@ class Epoller {
 
   int min_cap_;
 
-  std::shared_mutex mutex_;
+  mutable std::shared_mutex mutex_;
 
   /**
    * @brief Descriptor for epoll

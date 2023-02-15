@@ -13,14 +13,6 @@
 
 namespace http {
 
-void Server::set_triger_mode(bool is_listen_et = true,
-                             bool is_client_et = true) {
-  listen_fd_event_ = EPOLLRDHUP;
-  client_event_ = EPOLLONESHOT | EPOLLRDHUP;
-  if (is_listen_et) listen_fd_event_ |= EPOLLET;
-  if (is_client_et) client_event_ |= EPOLLET;
-}
-
 bool Server::listen(uint16_t port, const std::string address) {
   if (running_ || port < 1024) return false;
 
@@ -73,7 +65,8 @@ bool Server::listen(uint16_t port, const std::string address) {
   }
 
   // 用 nullptr 去区分客户端链接还是服务器 fd
-  epoll_event ev = {.events = listen_fd_event_ | EPOLLIN, .data.ptr = nullptr};
+  epoll_event ev = {.events = listen_fd_event_ | EPOLLIN,
+                    .data{.ptr = nullptr}};
 
   // add to epoll tree
   if (epoller_.add(listen_fd_, ev) == false) {
@@ -87,9 +80,10 @@ bool Server::listen(uint16_t port, const std::string address) {
   return true;
 }
 
-bool Server::start() {
-  if (listen_fd_ == -1 || running_) return false;
+void Server::start() {
+  if (listen_fd_ == -1 || running_) return;
 
+  running_ = true;
   while (running_) {
     int n = epoller_.wait(-1);
     if (n == -1 && (errno == ECONNABORTED || errno == EINTR)) continue;
@@ -125,8 +119,8 @@ void Server::acceptor() {
   do {
     int fd = accept(listen_fd_, (struct sockaddr *)&addr, &len);
     if (fd <= 0) break;
-    auto con = conn_mgr_.add(fd, Connection(fd, addr));
-    epoll_event ev = {.events = client_event_, .data.ptr = con};
+    auto con = conn_mgr_.add(fd, std::make_unique<Connection>(fd, addr));
+    epoll_event ev = {.events = client_event_, .data{.ptr = con}};
     epoller_.add(fd, ev);
   } while (listen_fd_event_ & EPOLLET);
 }
@@ -139,13 +133,13 @@ void Server::close_client(int client_fd) {
 /**
  * @todo
  */
-void Server::on_read(Connection *conn_ptr) {
-  int client_fd = conn_ptr->fd();
+void Server::on_read(Connection *conn) {
+  int client_fd = conn->fd();
   // todo: update expire time
 
   // read data from fd
   auto [state, req] =
-      conn_ptr->parse_request_from_fd(this->client_event_ & EPOLLET);
+      conn->parse_request_from_fd(this->client_event_ & EPOLLET);
   if (RequestParser::is_error_state(state)) {
     // todo 发送错误原因
     this->close_client(client_fd);
@@ -153,7 +147,7 @@ void Server::on_read(Connection *conn_ptr) {
   }
   if (req == nullptr) {
     epoll_event ev = {.events = this->client_event_ | EPOLLIN,
-                      .data.fd = client_fd};
+                      .data = {.ptr = conn}};
     bool ret = this->epoller_.mod(client_fd, ev);
     if (!ret) {
       // todo 服务器内部错误
@@ -173,12 +167,12 @@ void Server::on_read(Connection *conn_ptr) {
     return;
   }
 
-  ResponseWriter &resp_writer = conn_ptr->response_writer();
+  ResponseWriter &resp_writer = conn->response_writer();
   handler->operator()(resp_writer, *req);
 
-  conn_ptr->make_response();
+  conn->make_response();
   epoll_event ev = {.events = this->client_event_ | EPOLLOUT,
-                    .data.ptr = conn_ptr};
+                    .data = {.ptr = conn}};
   bool ret = this->epoller_.mod(client_fd, ev);
   if (!ret) {
     // 服务器内部错误
@@ -186,18 +180,20 @@ void Server::on_read(Connection *conn_ptr) {
   }
 }
 
-void Server::on_write(Connection *conn_ptr) {
-  int client_fd = conn_ptr->fd();
+void Server::on_write(Connection *conn) {
+  int client_fd = conn->fd();
   // todo: update expire time
 
-  auto &bv = conn_ptr->response();
+  auto &bv = conn->response();
 
   auto size = writev(client_fd, bv.get_iovec_address(), bv.size());
   bv.update(size);
   if (bv.bytes() == 0) {
-    if (conn_ptr->is_keep_alive()) {
+    if (conn->is_keep_alive()) {
+      // 清空上个链接的缓冲
+      conn->clear();
       epoll_event ev = {.events = this->client_event_ | EPOLLIN,
-                        .data.ptr = conn_ptr};
+                        .data = {.ptr = conn}};
       this->epoller_.mod(client_fd, ev);
       return;
     }
@@ -208,7 +204,7 @@ void Server::on_write(Connection *conn_ptr) {
   if (size < 0) {
     if (errno == EAGAIN) {
       epoll_event ev = {.events = this->client_event_ | EPOLLOUT,
-                        .data.ptr = conn_ptr};
+                        .data = {.ptr = conn}};
       this->epoller_.mod(client_fd, ev);
       return;
     }
@@ -218,7 +214,7 @@ void Server::on_write(Connection *conn_ptr) {
   }
 
   epoll_event ev = {.events = this->client_event_ | EPOLLOUT,
-                    .data.ptr = conn_ptr};
+                    .data = {.ptr = conn}};
   this->epoller_.mod(client_fd, ev);
 }
 

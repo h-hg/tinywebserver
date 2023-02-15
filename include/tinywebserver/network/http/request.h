@@ -1,5 +1,5 @@
-#ifndef HTTP_REQUEST_
-#define HTTP_REQUEST_
+#ifndef HTTP_REQUEST_H_
+#define HTTP_REQUEST_H_
 
 #include <string>
 #include <vector>

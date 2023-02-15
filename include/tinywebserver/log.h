@@ -179,7 +179,7 @@ class Logger {
   /**
    * @brief mutex for producer
    */
-  std::mutex logs_mutex_ = {};
+  mutable std::mutex logs_mutex_ = {};
 
   /**
    * @brief
