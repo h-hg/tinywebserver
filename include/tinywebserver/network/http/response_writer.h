@@ -1,4 +1,5 @@
-// todo
+#ifndef HTTP_RESPONSE_WRITER_
+#define HTTP_RESPONSE_WRITER_
 
 #include <sys/mman.h>
 #include <sys/stat.h>
@@ -7,7 +8,12 @@
 #include "tinywebserver/utils/buffer_vector.h"
 
 namespace http {
+
+class Connection;
+
 class ResponseWriter {
+  friend Connection;
+
  public:
   std::string version() { return resp_.version(); }
   void set_version(const std::string& version) { resp_.set_version(version); }
@@ -45,3 +51,5 @@ class ResponseWriter {
 };
 
 }  // namespace http
+
+#endif

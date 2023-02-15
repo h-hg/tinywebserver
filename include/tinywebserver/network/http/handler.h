@@ -27,7 +27,14 @@ class HandlerManager {
    * return pointer.
    * @return return nullptr when no handler is mathed.
    */
-  HTTPHandler *match(const std::string &pattern) const;
+  HTTPHandler *match(const std::string &pattern, bool use_default = true) const;
+
+  bool default_handle(HTTPHandler &&handler) {
+    default_handler_ = std::make_unique<HTTPHandler>(std::move(handler));
+    return true;
+  }
+
+  HTTPHandler *default_handler() const { return default_handler_.get(); }
 
  protected:
   /**
@@ -41,6 +48,8 @@ class HandlerManager {
    * sorted by length of pattern from longest to shortest.
    */
   std::vector<std::pair<std::string, HTTPHandler *>> handlers_;
+
+  std::unique_ptr<HTTPHandler> default_handler_ = nullptr;
 };
 
 }  // namespace http

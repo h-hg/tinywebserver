@@ -7,12 +7,10 @@
 
 #include <atomic>
 #include <cstdint>
-#include <memory>
-#include <shared_mutex>
 #include <string>
-#include <unordered_map>
 
 #include "tinywebserver/network/epoller.h"
+#include "tinywebserver/network/http/connection.h"
 #include "tinywebserver/network/http/handler.h"
 #include "tinywebserver/network/http/request_parser.h"
 #include "tinywebserver/network/http/response_writer.h"
@@ -22,82 +20,8 @@
 namespace http {
 
 class Server {
- protected:
-  class Connection {
-   public:
-    /**
-     * @param fd File descriptor of client socket
-     * @param is_et Whether fd is in the edge triger mode.
-     */
-    Connection(int fd = -1, sockaddr_in addr = {}, bool is_et = true)
-        : fd_(fd), addr_(addr), is_et_(is_et) {}
-
-    ~Connection() { this->close(); }
-
-    int fd() const { return fd_; }
-
-    /**
-     * @brief Parsing HTPP Request from file descriptor
-     */
-    auto parse_request_from_fd() {
-      return req_parser_.consume_from_fd(fd_, is_et_);
-    }
-
-    auto &get_response_writer() { return resp_writer_; }
-
-    const auto &get_response_writer() const { return resp_writer_; }
-
-    bool keep_alive() const { return keep_alive_; }
-
-    auto client_address() const -> auto{ return addr_; }
-    /*
-     * @brief make response according to parse_success and srcpath
-     */
-    bool make_response() {
-      full_resp_.clear();
-      // todo response line
-      full_resp_.write(std::string(resp_writer_.header()));
-      // todo 设置为 frient class 才能读取
-      // full_resp_.write(std::move(resp_writer_.buf_));
-    }
-
-    auto &response() { return full_resp_; }
-
-    const auto &response() const { return full_resp_; }
-
-    /**
-     * @brief Close the Connection.
-     */
-    bool close() {
-      if (fd_ == -1) return false;
-      ::close(fd_);
-      fd_ = -1;
-      return true;
-    }
-
-   protected:
-    /**
-     * @brief fd of client
-     */
-    int fd_ = -1;
-
-    bool is_et_ = true;
-
-    bool keep_alive_ = true;
-
-    /**
-     * @brief Address of client
-     */
-    sockaddr_in addr_;
-
-    ResponseWriter resp_writer_;
-
-    RequestParser req_parser_;
-
-    BufferVector full_resp_;
-  };
-
  public:
+  Server() = default;
   ~Server() {
     if (listen_fd_ != -1) close(listen_fd_);
   }
@@ -116,11 +40,6 @@ class Server {
    */
   bool start();
 
-  /**
-   * @brief Close client
-   */
-  bool close_client(int client_fd);
-
   bool stop() {
     if (running_ == false) return false;
     running_ = true;
@@ -135,28 +54,19 @@ class Server {
   void set_triger_mode(bool is_listen_et = true, bool is_client_et = true);
 
  protected:
-  /**
-   * @brief Get the HTTP Connection by client fd.
-   */
-  Connection *get_connection(int client_fd) {
-    std::shared_lock lock(clients_mutex_);
-    if (auto it = clients_.find(client_fd); it != clients_.end())
-      return (it->second).get();
-    else
-      return nullptr;
-  }
-
   void acceptor();
+
+  void close_client(int client_fd);
 
   /*
    * @brief handle EPOLLIN event
    */
-  void on_read(int client_fd);
+  void on_read(Connection *conn);
 
   /*
    * @brief handle EPOLLOUT event
    */
-  void on_write(int client_fd);
+  void on_write(Connection *conn);
 
   /**
    * @brief Listening file descriptor
@@ -181,24 +91,11 @@ class Server {
   std::atomic<bool> running_ = {false};
 
   /**
-   * @brief File descriptor to HTTP Connection
-   */
-  std::unordered_map<int, std::unique_ptr<Connection>> clients_;
-
-  /**
-   * @brief The mutex for clients_
-   */
-  std::shared_mutex clients_mutex_;
-
-  /**
    * @brief HTTP Handler Manager
    */
   HandlerManager handler_mgr_;
 
-  /**
-   * @todo
-   */
-  HTTPHandler default_handler_;
+  ConnectionManger conn_mgr_;
 
   /**
    * @brief Thread pool

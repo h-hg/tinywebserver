@@ -5,9 +5,49 @@
 
 #include <algorithm>
 #include <functional>
+#include <initializer_list>
 #include <list>
 #include <memory>
 #include <string_view>
+#include <vector>
+
+class IOVector {
+ public:
+  IOVector() : data_({iovec{.iov_base = nullptr, .iov_len = 0}}) {}
+
+  IOVector(std::vector<iovec>&& v) : data_(std::move(v)) {}
+
+  IOVector(std::initializer_list<iovec> list) : data_(list) {}
+
+  const iovec* get_iovec_address() const { return &(data_[begin_]); }
+
+  const auto& operator[](size_t i) const { return data_[begin_ + i]; }
+
+  size_t size() { return data_.size() - begin_; }
+
+  size_t bytes() const {
+    size_t ret = 0;
+    for (size_t i = begin_; i < data_.size(); ++i) ret += data_[i].iov_len;
+    return ret;
+  }
+
+  void update(size_t step) {
+    for (; begin_ < data_.size() && step > 0;) {
+      auto& iov = data_[begin_];
+      if (step >= iov.iov_len) {
+        step -= iov.iov_len;
+        ++begin_;
+      } else {
+        step = 0;
+        iov.iov_base = reinterpret_cast<char*>(iov.iov_base) + step;
+      }
+    }
+  }
+
+ protected:
+  std::vector<iovec> data_;
+  size_t begin_ = 0;
+};
 
 class BufferVector {
  protected:
@@ -311,9 +351,9 @@ class BufferVector {
 
     auto it_end = buffer.it_write_;
     if (buffer.n_write_ != 0) {
-      buffer.it_write_->size = buffer.it_write_ == buffer.data_.begin()
-                                   ? buffer.n_write_ - buffer.n_read_
-                                   : buffer.n_write_;
+      buffer.it_write_->size = (buffer.it_write_ == buffer.data_.begin()
+                                    ? buffer.n_write_ - buffer.n_read_
+                                    : buffer.n_write_);
       ++it_end;
     }
 
@@ -364,7 +404,7 @@ class BufferVector {
   /**
    * @brief Return the iovec that can be read.
    */
-  std::vector<iovec> get_read_iovec() const {
+  IOVector get_read_iovec() const {
     if (readable_empty()) return {};
     CIterator it_write_ = this->it_write_;
     if (it_write_ == data_.cbegin())
@@ -386,7 +426,7 @@ class BufferVector {
   /**
    * @brief Return the iovec that can be written
    */
-  std::vector<iovec> get_write_iovec() const {
+  IOVector get_write_iovec() const {
     if (writeable_size() == 0) return {};
     std::vector<iovec> ret;
     CIterator it_write_ = this->it_write_;

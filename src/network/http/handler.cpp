@@ -19,11 +19,13 @@ bool HandlerManager::handle(const std::string &pattern, HTTPHandler &&handler) {
   return true;
 }
 
-HTTPHandler *HandlerManager::match(const std::string &pattern) const {
+HTTPHandler *HandlerManager::match(const std::string &pattern,
+                                   bool use_default) const {
   if (auto it = pattern2handler_.find(pattern); it != pattern2handler_.end())
     return it->second.get();
-  for (const auto &[p, handler] : handlers_)
+  for (auto &[p, handler] : handlers_)
     if (pattern.starts_with(p)) return handler;
-  return nullptr;
+  return use_default ? default_handler_.get() : nullptr;
 }
+
 }  // namespace http

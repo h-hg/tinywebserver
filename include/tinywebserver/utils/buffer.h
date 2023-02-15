@@ -15,6 +15,7 @@ class Buffer {
    * @param capacity the initial size of the Buffer
    */
   inline static const size_t default_capacity = 1024 * 4;
+
   Buffer(size_t capacity = default_capacity)
       : cap_(capacity),
         data_(std::make_unique<char[]>(cap_)),
@@ -50,6 +51,7 @@ class Buffer {
     read_ptr_ = obj.read_ptr_;
     write_ptr_ = obj.write_ptr_;
     obj.begin_ptr_ = obj.read_ptr_ = obj.write_ptr_ = nullptr;
+    return *this;
   }
 
   ~Buffer() = default;
@@ -91,7 +93,7 @@ class Buffer {
   /**
    * @brief Get the writeable size
    */
-  size_t writeable_size() const { (begin_ptr_ + cap_) - write_ptr_; }
+  size_t writeable_size() const { return (begin_ptr_ + cap_) - write_ptr_; }
 
   /**
    * @brief Get the current write pointer

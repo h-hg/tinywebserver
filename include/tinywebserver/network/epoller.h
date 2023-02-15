@@ -33,7 +33,12 @@ class Epoller {
     epfd_ = epoll_create(1);
   }
 
-  ~Epoller() { close(epfd_); }
+  ~Epoller() { this->close(); }
+
+  void close() {
+    ::close(epfd_);
+    epfd_ = -1;
+  }
 
   /**
    * @brief Add fd to the epoll tree
@@ -82,8 +87,6 @@ class Epoller {
 
   epoll_event& operator[](int i) { return events_[i]; }
 
-  const epoll_event& operator[](int i) const { return events_[i]; }
-
   /**
    * @brief Get the number of fd on the epoll tree.
    */
@@ -98,7 +101,7 @@ class Epoller {
    * @brief Adaptively adjust the size of epoll event buffer according to the
    * number of fd
    */
-  int resize() {
+  void resize() {
     std::lock_guard lock(mutex_);
     if (n_fd_ < events_.size() / 2 && events_.size() > min_cap_)
       // Using int(0.75 * events_.size()) instead of 0.5 * events_.size() to
@@ -113,9 +116,14 @@ class Epoller {
   /**
    * @brief Resize the epoll event buffer.
    */
-  int resize(int size) {
+  void resize(int size) {
     std::lock_guard lock(mutex_);
     events_.resize(std::max(min_cap_, size));
+  }
+
+  void clear() {
+    this->close();
+    epfd_ = epfd_ = epoll_create(1);
   }
 
  protected:

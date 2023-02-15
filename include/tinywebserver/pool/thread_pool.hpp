@@ -15,6 +15,9 @@
 
 class ThreadPool {
  public:
+   inline static const unsigned int default_thread_count =
+      std::thread::hardware_concurrency();
+
   /**
    * @brief Construct a new thread pool.
    *
@@ -23,7 +26,7 @@ class ThreadPool {
    * implementation. This is usually determined by the number of cores in the
    * CPU. If a core is hyperthreaded, it will count as two threads.
    */
-  ThreadPool(unsigned int thread_count)
+  ThreadPool(unsigned int thread_count = default_thread_count)
       : thread_count_(determine_thread_count(thread_count)),
         threads_(std::make_unique<std::thread[]>(
             determine_thread_count(thread_count_))) {

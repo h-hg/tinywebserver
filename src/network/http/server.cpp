@@ -7,6 +7,7 @@
 #include <sys/socket.h>
 
 #include <cstring>
+#include <memory>
 
 #include "tinywebserver/network/linux_wrapper.h"
 
@@ -70,8 +71,10 @@ bool Server::listen(uint16_t port, const std::string address) {
     listen_fd_ = -1;
     return false;
   }
-  epoll_event ev = {.events = listen_fd_event_ | EPOLLIN,
-                    .data.fd = listen_fd_};
+
+  // 用 nullptr 去区分客户端链接还是服务器 fd
+  epoll_event ev = {.events = listen_fd_event_ | EPOLLIN, .data.ptr = nullptr};
+
   // add to epoll tree
   if (epoller_.add(listen_fd_, ev) == false) {
     ::close(listen_fd_);
@@ -92,20 +95,22 @@ bool Server::start() {
     if (n == -1 && (errno == ECONNABORTED || errno == EINTR)) continue;
     for (int i = 0; i < n; ++i) {
       auto event = epoller_[i];
-      int fd = event.data.fd;
-      if (fd == listen_fd_) {
+      auto conn = static_cast<Connection *>(event.data.ptr);
+      if (conn == nullptr) {
         acceptor();
-      } else if (event.events & (EPOLLRDHUP | EPOLLHUP | EPOLLERR)) {
-        // close fd
-        this->close_client(fd);
-      } else if (event.events & EPOLLIN) {
-        // readable
-        on_read(fd);
-      } else if (event.events & EPOLLOUT) {
-        // writeable
-        on_write(fd);
       } else {
-        // log unknown event
+        if (event.events & (EPOLLRDHUP | EPOLLHUP | EPOLLERR)) {
+          // close fd
+          this->close_client(conn->fd());
+        } else if (event.events & EPOLLIN) {
+          // readable
+          on_read(conn);
+        } else if (event.events & EPOLLOUT) {
+          // writeable
+          on_write(conn);
+        } else {
+          // log unknown event
+        }
       }
     }
   }
@@ -115,47 +120,32 @@ bool Server::start() {
  * finish
  */
 void Server::acceptor() {
-  // lock the clients_
-  std::lock_guard lock(clients_mutex_);
-
   struct sockaddr_in addr;
   socklen_t len = sizeof(addr);
   do {
     int fd = accept(listen_fd_, (struct sockaddr *)&addr, &len);
     if (fd <= 0) break;
-    clients_.emplace(
-        fd, std::make_unique<Connection>(fd, addr, client_event_ & EPOLLET));
+    auto con = conn_mgr_.add(fd, Connection(fd, addr));
+    epoll_event ev = {.events = client_event_, .data.ptr = con};
+    epoller_.add(fd, ev);
   } while (listen_fd_event_ & EPOLLET);
 }
 
-/**
- * @brief finish
- */
-bool Server::close_client(int client_fd) {
-  std::lock_guard lock(clients_mutex_);
-  if (auto it = clients_.find(client_fd); it != clients_.end()) {
-    auto &con = *(it->second);
-    con.close();
-    clients_.erase(it);
-    epoller_.del(client_fd);
-  }
+void Server::close_client(int client_fd) {
+  conn_mgr_.close(client_event_);
+  epoller_.del(client_fd);
 }
 
 /**
  * @todo
  */
-void Server::on_read(int client_fd) {
-  auto conn_ptr = get_connection(client_fd);
+void Server::on_read(Connection *conn_ptr) {
+  int client_fd = conn_ptr->fd();
   // todo: update expire time
-  if (conn_ptr == nullptr) {
-    /**
-     * @todo 服务器内部错误，只能把该连接关了
-     */
-    return;
-  }
 
   // read data from fd
-  auto [state, req] = conn_ptr->parse_request_from_fd();
+  auto [state, req] =
+      conn_ptr->parse_request_from_fd(this->client_event_ & EPOLLET);
   if (RequestParser::is_error_state(state)) {
     // todo 发送错误原因
     this->close_client(client_fd);
@@ -182,11 +172,13 @@ void Server::on_read(int client_fd) {
     this->close_client(client_fd);
     return;
   }
-  (*handler)(conn_ptr->get_response_writer(), *req);
+
+  ResponseWriter &resp_writer = conn_ptr->response_writer();
+  handler->operator()(resp_writer, *req);
 
   conn_ptr->make_response();
   epoll_event ev = {.events = this->client_event_ | EPOLLOUT,
-                    .data.fd = client_fd};
+                    .data.ptr = conn_ptr};
   bool ret = this->epoller_.mod(client_fd, ev);
   if (!ret) {
     // 服务器内部错误
@@ -194,33 +186,40 @@ void Server::on_read(int client_fd) {
   }
 }
 
-void Server::on_write(int client_fd) {
-  auto conn_ptr = get_connection(client_fd);
+void Server::on_write(Connection *conn_ptr) {
+  int client_fd = conn_ptr->fd();
   // todo: update expire time
-  if (conn_ptr == nullptr) {
-    /**
-     * @todo 服务器内部错误，只能把该连接关了
-     */
+
+  auto &bv = conn_ptr->response();
+
+  auto size = writev(client_fd, bv.get_iovec_address(), bv.size());
+  bv.update(size);
+  if (bv.bytes() == 0) {
+    if (conn_ptr->is_keep_alive()) {
+      epoll_event ev = {.events = this->client_event_ | EPOLLIN,
+                        .data.ptr = conn_ptr};
+      this->epoller_.mod(client_fd, ev);
+      return;
+    }
+    this->close_client(client_fd);
     return;
   }
 
-  auto &bv = conn_ptr->response();
-  // todo 写一个加强版本的 iov 专门负责 更新读写指针。
-  auto iov = bv.get_read_iovec();
-
-  int ret = -1, write_errno = 0;
-  ret = conn.write(write_errno);
-  if (ret < 0) {  // if error occurs when writing to socket fd
-    if (write_errno == EAGAIN) {
-      this->epoller_.mod(conn.fd_, this->client_event_ | EPOLLOUT);
-    } else {
-      this->close_client(conn.fd_);
+  if (size < 0) {
+    if (errno == EAGAIN) {
+      epoll_event ev = {.events = this->client_event_ | EPOLLOUT,
+                        .data.ptr = conn_ptr};
+      this->epoller_.mod(client_fd, ev);
+      return;
     }
-  } else if (conn.keep_alive_) {
-    this->epoller_.mod(conn.fd_, this->client_event_ | EPOLLIN);
-  } else {
-    this->close_client(conn.fd_);
+    // todo 产生未知错误
+    this->close_client(client_fd);
+    return;
   }
+
+  epoll_event ev = {.events = this->client_event_ | EPOLLOUT,
+                    .data.ptr = conn_ptr};
+  this->epoller_.mod(client_fd, ev);
 }
 
 }  // namespace http

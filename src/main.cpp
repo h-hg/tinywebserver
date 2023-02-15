@@ -14,6 +14,7 @@ INI read_config(const std::string &filename) {
                   std::istreambuf_iterator<char>());
   std::string_view sv(str.begin(), str.end());
   auto ini = INI::parse(sv);
+  return ini;
 }
 
 int main() {
@@ -29,7 +30,7 @@ int main() {
 
   server.handle("/", [](http::ResponseWriter &resp, const http::Request &req) {
     // todo
-    });
+  });
 
   uint16_t port = std::stoi(ini.get("server", "port", "8888"));
   server.listen(port, ini.get("server", "adress"));

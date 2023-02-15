@@ -3,6 +3,7 @@
 
 set(
   SOURCES
+  network/http/handler.cpp
   network/http/parser.cpp
   network/http/request.cpp
   network/http/request_parser.cpp
@@ -10,7 +11,6 @@ set(
   ini.cpp
   log.cpp
   main.cpp
-  timer.cpp
 )
 
 
